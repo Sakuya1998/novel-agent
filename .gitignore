@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+
+# 运行时数据(小说项目与配置含 API Key)
+data/
+
+# 系统/编辑器
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Trae 工具产物
+.trae-html-share-packages/

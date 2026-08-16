@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>墨笔 · 小说创作 Agent</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">墨笔<span>小说创作 Agent</span></div>
+  <div class="topbar-right">
+    <span id="llm-badge" class="badge" title="当前模型,点击可修改"></span>
+    <button id="btn-new" class="btn primary">＋ 新建小说</button>
+    <button id="btn-settings" class="btn ghost">⚙ 设置</button>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <div class="side-section">
+      <div class="side-title">我的作品</div>
+      <ul id="project-list" class="project-list"></ul>
+    </div>
+    <div class="side-section" id="steps-section" hidden>
+      <div class="side-title">创作流程</div>
+      <ul class="steps" id="steps"></ul>
+    </div>
+  </aside>
+  <main id="main" class="main"></main>
+</div>
+
+<!-- 新建小说(创作向导) -->
+<div class="modal-backdrop" id="modal-new" hidden>
+  <div class="modal">
+    <div class="modal-head"><h3>新建小说</h3><button class="close" data-close="modal-new">×</button></div>
+    <div class="modal-body">
+      <label>书名</label>
+      <input id="wz-title" placeholder="可留空,稍后由 AI 起名">
+      <label>创作意向 / 灵感 <em>*</em></label>
+      <textarea id="wz-idea" rows="3" placeholder="例:一个能听见器物之声的古籍修复师,在修复一册禁书时被卷入百年前的冤案"></textarea>
+      <label>类型</label>
+      <input id="wz-genre" placeholder="如:悬疑 / 东方玄幻 / 都市情感 / 科幻">
+      <div class="form-grid">
+        <div><label>角色数</label><input id="wz-chars" type="number" value="5" min="2" max="12"></div>
+        <div><label>大纲章数</label><input id="wz-outline" type="number" value="12" min="3" max="100"></div>
+      </div>
+      <label class="check"><input id="wz-auto" type="checkbox" checked> 完成设定后自动写出第 1 章</label>
+      <div class="wizard-steps" id="wizard-steps" hidden></div>
+      <pre class="gen-log" id="wizard-log" hidden></pre>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" data-close="modal-new">取消</button>
+      <button class="btn primary" id="btn-wizard-run">✨ 开始创作</button>
+    </div>
+  </div>
+</div>
+
+<!-- 设置 -->
+<div class="modal-backdrop" id="modal-settings" hidden>
+  <div class="modal">
+    <div class="modal-head"><h3>模型设置</h3><button class="close" data-close="modal-settings">×</button></div>
+    <div class="modal-body">
+      <label>Provider</label>
+      <select id="st-provider">
+        <option value="openai">OpenAI 兼容(DeepSeek / Qwen / GLM / OpenAI …)</option>
+        <option value="anthropic">Anthropic Claude</option>
+        <option value="mock">mock(离线演示,不调用模型)</option>
+      </select>
+      <label>模型名</label>
+      <input id="st-model" placeholder="如 deepseek-chat / gpt-4o-mini / claude-sonnet-4-20250514">
+      <label>Base URL(OpenAI 兼容服务地址,Anthropic 可留空)</label>
+      <input id="st-baseurl" placeholder="如 https://api.deepseek.com/v1">
+      <label>API Key(留空则使用环境变量)</label>
+      <input id="st-apikey" type="password" placeholder="sk-…">
+      <div class="form-grid">
+        <div><label>单章目标字数</label><input id="st-words" type="number" value="2500" min="500" max="8000"></div>
+        <div><label>温度(0~1.2)</label><input id="st-temp" type="number" step="0.1" value="0.8" min="0" max="1.2"></div>
+      </div>
+      <p class="hint">环境变量优先级高于此处配置:NOVEL_AGENT_PROVIDER / _MODEL / _BASE_URL / _API_KEY,或 OPENAI_API_KEY / ANTHROPIC_API_KEY。</p>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" data-close="modal-settings">取消</button>
+      <button class="btn primary" id="btn-save-settings">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 角色编辑 -->
+<div class="modal-backdrop" id="modal-character" hidden>
+  <div class="modal">
+    <div class="modal-head"><h3 id="ch-modal-title">角色卡</h3><button class="close" data-close="modal-character">×</button></div>
+    <div class="modal-body" id="character-form"></div>
+    <div class="modal-foot">
+      <button class="btn" data-close="modal-character">取消</button>
+      <button class="btn primary" id="btn-save-character">保存角色</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast-wrap"></div>
+<script src="/app.js"></script>
+</body>
+</html>

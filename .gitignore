@@ -6,6 +6,10 @@ __pycache__/
 venv/
 env/
 .pytest_cache/
+.ruff_cache/
+
+# 机密与环境配置
+.env
 
 # 运行时数据(小说项目与配置含 API Key)
 data/

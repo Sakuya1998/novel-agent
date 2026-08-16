@@ -1,0 +1,64 @@
+[project]
+name = "novel-agent"
+version = "1.0.0"
+description = "墨笔 · 小说创作 Agent — FastAPI + LLM 的长篇小说创作平台"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "openai>=1.30",
+    "anthropic>=0.30",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "httpx>=0.27",
+    "ruff>=0.4",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["app", "app.core", "app.api", "app.services"]
+
+# ---------------- Ruff ----------------
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+exclude = [".venv", "data", "static"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
+    "SIM", # flake8-simplify
+]
+ignore = [
+    "B008", # FastAPI 依赖注入风格需要在参数中调用函数
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+
+[tool.ruff.lint.per-file-ignores]
+# 中文长文本(prompt 模板、mock 演示数据)无法安全折行
+"app/prompts.py" = ["E501"]
+"app/services/agent.py" = ["E501"]
+
+# ---------------- Pytest ----------------
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "-q"

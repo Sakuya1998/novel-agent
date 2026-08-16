@@ -1,10 +1,15 @@
 """小说创作 Agent:上下文构建 + 生成流水线。"""
+
 import json
 import re
-from typing import Any, AsyncIterator, Dict, List, Optional
+from collections.abc import AsyncIterator
+from typing import Any
 
-from . import prompts
-from .llm import LLMClient, LLMError
+from .. import prompts
+from ..core.logging import get_logger
+from .llm import LLMClient, LLMError, LLMOptions
+
+logger = get_logger("novel.agent")
 
 # ---------------- mock provider 的离线演示输出 ----------------
 MOCK_PREMISE = """## 书名
@@ -67,9 +72,21 @@ MOCK_OUTLINE = json.dumps(
         }
         for i, (t, s, e) in enumerate(
             [
-                ("雾夜命案", "沈青梧入京首夜,长河雾中浮出漕船尸首,她封锁现场与府衙产生冲突。", "入京;雾中命案;初见陆昭"),
-                ("旧档疑云", "沈青梧调阅三十年前沉船旧档,发现关键页缺失,恩师裴慎之亲自设宴压案。", "调档;缺页;恩师设宴"),
-                ("漕帮暗线", "陆昭带沈青梧夜访漕帮,得知失踪者皆有共同特征,危险开始逼近。", "夜访漕帮;线索浮现;第一次遇袭"),
+                (
+                    "雾夜命案",
+                    "沈青梧入京首夜,长河雾中浮出漕船尸首,她封锁现场与府衙产生冲突。",
+                    "入京;雾中命案;初见陆昭",
+                ),
+                (
+                    "旧档疑云",
+                    "沈青梧调阅三十年前沉船旧档,发现关键页缺失,恩师裴慎之亲自设宴压案。",
+                    "调档;缺页;恩师设宴",
+                ),
+                (
+                    "漕帮暗线",
+                    "陆昭带沈青梧夜访漕帮,得知失踪者皆有共同特征,危险开始逼近。",
+                    "夜访漕帮;线索浮现;第一次遇袭",
+                ),
                 ("河祭之约", "线索直指河祭之夜,沈青梧决定将计就计,与幕后之人正面相见。", "将计就计;身份揭穿;真相大白"),
             ],
             start=1,
@@ -90,7 +107,7 @@ MOCK_CHAPTER = (
 )
 
 
-def extract_json_array(text: str) -> List[Dict[str, Any]]:
+def extract_json_array(text: str) -> list[dict[str, Any]]:
     text = text.strip()
     if text.startswith("```"):
         text = re.sub(r"^```[a-zA-Z]*\n?", "", text)
@@ -104,19 +121,20 @@ def extract_json_array(text: str) -> List[Dict[str, Any]]:
     return data
 
 
-def normalize_characters(raw: List[Any]) -> List[Dict[str, Any]]:
+def normalize_characters(raw: list[Any]) -> list[dict[str, Any]]:
     keys = ["name", "role", "appearance", "personality", "background", "goal", "arc", "relationships"]
     out = []
     for item in raw:
         if not isinstance(item, dict) or not str(item.get("name", "")).strip():
             continue
-        out.append({k: str(item.get(k, "") or "") for k in keys})
+        fields = {k: str(item.get(k, "") or "").strip()[:2000] for k in keys}
+        out.append(fields)
     if not out:
         raise ValueError("模型返回的角色数据无效,请重试。")
     return out
 
 
-def normalize_outline(raw: List[Any]) -> List[Dict[str, Any]]:
+def normalize_outline(raw: list[Any]) -> list[dict[str, Any]]:
     out = []
     for i, item in enumerate(raw, start=1):
         if not isinstance(item, dict):
@@ -132,9 +150,9 @@ def normalize_outline(raw: List[Any]) -> List[Dict[str, Any]]:
         out.append(
             {
                 "index": index,
-                "title": title or f"第{i}章",
-                "summary": summary,
-                "key_events": str(item.get("key_events", "") or ""),
+                "title": title[:200] or f"第{i}章",
+                "summary": summary[:2000],
+                "key_events": str(item.get("key_events", "") or "")[:1000],
             }
         )
     if not out:
@@ -145,22 +163,25 @@ def normalize_outline(raw: List[Any]) -> List[Dict[str, Any]]:
 class NovelAgent:
     """围绕一个小说项目执行的生成流水线。"""
 
-    def __init__(self, settings: Dict[str, Any]):
+    def __init__(self, settings: dict[str, Any], options: LLMOptions | None = None):
         self.settings = settings
         self.llm = LLMClient(
             provider=settings.get("provider", "openai"),
             model=settings.get("model", ""),
             api_key=settings.get("api_key", ""),
             base_url=settings.get("base_url", ""),
+            options=options,
         )
         self.temperature = float(settings.get("temperature", 0.8))
         self.chapter_words = int(settings.get("chapter_words", 2500))
 
     # ---------- 基础流 ----------
-    async def _stream(self, system: str, user: str, mock_text: str, temperature: float = None,
-                      max_tokens: int = None) -> AsyncIterator[Dict[str, Any]]:
+    async def _stream(
+        self, system: str, user: str, mock_text: str, temperature: float | None = None, max_tokens: int | None = None
+    ) -> AsyncIterator[dict[str, Any]]:
         async for chunk in self.llm.stream(
-            system, user,
+            system,
+            user,
             temperature=self.temperature if temperature is None else temperature,
             max_tokens=max_tokens,
             mock_text=mock_text,
@@ -169,46 +190,50 @@ class NovelAgent:
 
     # ---------- 上下文构建 ----------
     @staticmethod
-    def _bible(project: Dict[str, Any]) -> str:
+    def _bible(project: dict[str, Any]) -> str:
         return (project.get("premise") or "").strip() or (project.get("idea") or "").strip() or "(暂无设定)"
 
     @staticmethod
-    def _chars_text(project: Dict[str, Any]) -> str:
+    def _chars_text(project: dict[str, Any]) -> str:
         chars = project.get("characters") or []
         if not chars:
             return "(暂无角色卡)"
         lines = []
         for c in chars:
             lines.append(
-                f"- {c.get('name','?')}({c.get('role','')}):性格 {c.get('personality','')};"
-                f"目标 {c.get('goal','')};关系 {c.get('relationships','')}"
+                f"- {c.get('name', '?')}({c.get('role', '')}):性格 {c.get('personality', '')};"
+                f"目标 {c.get('goal', '')};关系 {c.get('relationships', '')}"
             )
         return "\n".join(lines)
 
     @staticmethod
-    def _outline_text(project: Dict[str, Any]) -> str:
+    def _outline_text(project: dict[str, Any]) -> str:
         outline = project.get("outline") or []
         if not outline:
             return "(暂无大纲)"
         return "\n".join(
-            f"第{o.get('index', i+1)}章《{o.get('title','')}》:{o.get('summary','')}" for i, o in enumerate(outline)
+            f"第{o.get('index', i + 1)}章《{o.get('title', '')}》:{o.get('summary', '')}" for i, o in enumerate(outline)
         )
 
     @staticmethod
-    def _plan(project: Dict[str, Any], index: int) -> Dict[str, str]:
+    def _plan(project: dict[str, Any], index: int) -> dict[str, str]:
         for o in project.get("outline") or []:
             if int(o.get("index", 0)) == index:
-                return {"title": o.get("title", ""), "summary": o.get("summary", ""), "key_events": o.get("key_events", "")}
+                return {
+                    "title": o.get("title", ""),
+                    "summary": o.get("summary", ""),
+                    "key_events": o.get("key_events", ""),
+                }
         return {"title": f"第{index}章", "summary": "", "key_events": ""}
 
     @staticmethod
-    def get_chapter(project: Dict[str, Any], index: int) -> Optional[Dict[str, Any]]:
+    def get_chapter(project: dict[str, Any], index: int) -> dict[str, Any] | None:
         for ch in project.get("chapters") or []:
             if int(ch.get("index", 0)) == index:
                 return ch
         return None
 
-    def _prev_context(self, project: Dict[str, Any], index: int) -> str:
+    def _prev_context(self, project: dict[str, Any], index: int) -> str:
         """写作第 index 章时的前文上下文:优先摘要,无摘要取正文结尾。"""
         parts = []
         for ch in sorted(project.get("chapters") or [], key=lambda c: int(c.get("index", 0))):
@@ -219,30 +244,32 @@ class NovelAgent:
             if not summary:
                 content = ch.get("content") or ""
                 summary = f"(暂无摘要,正文结尾:){content[-400:]}" if content else "(本章无内容)"
-            parts.append(f"第{ci}章《{ch.get('title','')}》:{summary}")
+            parts.append(f"第{ci}章《{ch.get('title', '')}》:{summary}")
         # 只保留最近 6 章摘要,防止上下文过长
         return "\n".join(parts[-6:])
 
     # ---------- 生成操作(流式,yield 事件) ----------
-    async def stream_premise(self, project: Dict[str, Any], idea: str, genre: str) -> AsyncIterator[Dict[str, Any]]:
-        user = prompts.premise_prompt(idea or project.get("idea", ""), genre or project.get("genre", ""), self.chapter_words)
+    async def stream_premise(self, project: dict[str, Any], idea: str, genre: str) -> AsyncIterator[dict[str, Any]]:
+        user = prompts.premise_prompt(
+            idea or project.get("idea", ""), genre or project.get("genre", ""), self.chapter_words
+        )
         async for ev in self._stream(prompts.SYSTEM_AUTHOR, user, mock_text=MOCK_PREMISE):
             yield ev
 
-    async def stream_characters(self, project: Dict[str, Any], count: int) -> AsyncIterator[Dict[str, Any]]:
+    async def stream_characters(self, project: dict[str, Any], count: int) -> AsyncIterator[dict[str, Any]]:
         premise = self._bible(project)
         user = prompts.characters_prompt(premise, count)
         async for ev in self._stream(prompts.SYSTEM_AUTHOR, user, mock_text=MOCK_CHARACTERS):
             yield ev
 
-    async def stream_outline(self, project: Dict[str, Any], num_chapters: int) -> AsyncIterator[Dict[str, Any]]:
+    async def stream_outline(self, project: dict[str, Any], num_chapters: int) -> AsyncIterator[dict[str, Any]]:
         user = prompts.outline_prompt(self._bible(project), self._chars_text(project), num_chapters)
         async for ev in self._stream(prompts.SYSTEM_AUTHOR, user, mock_text=MOCK_OUTLINE):
             yield ev
 
     async def stream_chapter(
-        self, project: Dict[str, Any], index: int, mode: str, instruction: str = ""
-    ) -> AsyncIterator[Dict[str, Any]]:
+        self, project: dict[str, Any], index: int, mode: str, instruction: str = ""
+    ) -> AsyncIterator[dict[str, Any]]:
         plan = self._plan(project, index)
         bible, chars, outline = self._bible(project), self._chars_text(project), self._outline_text(project)
         if mode == "polish":
@@ -250,7 +277,6 @@ class NovelAgent:
             if not ch or not (ch.get("content") or "").strip():
                 raise LLMError("本章还没有正文,无法润色。")
             user = prompts.chapter_polish_prompt(bible, chars, index, ch["content"], instruction)
-            mock = MOCK_CHAPTER
         else:
             existing_tail = ""
             if mode == "continue":
@@ -260,19 +286,28 @@ class NovelAgent:
                     raise LLMError("本章还没有正文,请先使用「AI 写作」。")
                 existing_tail = content[-1200:]
             user = prompts.chapter_write_prompt(
-                bible, chars, outline, self._prev_context(project, index),
-                index, plan["title"], plan["summary"], plan["key_events"],
-                self.chapter_words, existing_tail=existing_tail, instruction=instruction,
+                bible,
+                chars,
+                outline,
+                self._prev_context(project, index),
+                index,
+                plan["title"],
+                plan["summary"],
+                plan["key_events"],
+                self.chapter_words,
+                existing_tail=existing_tail,
+                instruction=instruction,
             )
-            mock = MOCK_CHAPTER
-        async for ev in self._stream(prompts.SYSTEM_AUTHOR, user, mock_text=mock):
+        async for ev in self._stream(prompts.SYSTEM_AUTHOR, user, mock_text=MOCK_CHAPTER):
             yield ev
 
     async def summarize_text(self, text: str) -> str:
         buf = ""
         async for chunk in self.llm.stream(
-            prompts.SYSTEM_AUTHOR, prompts.summary_prompt(text),
-            temperature=0.3, max_tokens=512,
+            prompts.SYSTEM_AUTHOR,
+            prompts.summary_prompt(text),
+            temperature=0.3,
+            max_tokens=512,
             mock_text="沈青梧入京首夜遇雾中命案,封锁现场与府衙冲突;调阅旧档发现关键缺页,恩师设宴压案,暗中另有势力注视着她。",
         ):
             buf += chunk

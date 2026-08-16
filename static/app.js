@@ -19,12 +19,32 @@ const state = {
 };
 
 /* ---------------- 基础工具 ---------------- */
+const AUTH_KEY_STORAGE = "novel-agent-api-key";
+
+function authHeaders() {
+  const key = localStorage.getItem(AUTH_KEY_STORAGE);
+  return key ? { "X-API-Key": key } : {};
+}
+
+/* 收到 401 时提示输入访问密钥,保存后重试一次;取消则抛出原始错误 */
+async function withAuthRetry(doFetch) {
+  let resp = await doFetch();
+  if (resp.status !== 401) return resp;
+  const key = prompt("此服务已开启访问鉴权,请输入访问密钥(API Key):");
+  if (key === null) return resp;
+  localStorage.setItem(AUTH_KEY_STORAGE, key.trim());
+  resp = await doFetch(); // 带新密钥重试
+  if (resp.status === 401) localStorage.removeItem(AUTH_KEY_STORAGE);
+  return resp;
+}
+
 async function api(path, opts = {}) {
-  const resp = await fetch(path, {
-    headers: { "Content-Type": "application/json" },
+  const doFetch = () => fetch(path, {
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     ...opts,
     body: opts.body ? JSON.stringify(opts.body) : undefined,
   });
+  const resp = await withAuthRetry(doFetch);
   if (!resp.ok) {
     let msg = `${resp.status}`;
     try {
@@ -37,11 +57,12 @@ async function api(path, opts = {}) {
 }
 
 async function streamNDJSON(path, body, { onDelta, onStatus } = {}) {
-  const resp = await fetch(path, {
+  const doFetch = () => fetch(path, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify(body || {}),
   });
+  const resp = await withAuthRetry(doFetch);
   if (!resp.ok) {
     let msg = `${resp.status}`;
     try { msg = (await resp.text()).slice(0, 300) || msg; } catch {}

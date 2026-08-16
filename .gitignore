@@ -7,12 +7,18 @@ venv/
 env/
 .pytest_cache/
 .ruff_cache/
+.python314/
+.tmp/
 
 # 机密与环境配置
 .env
 
 # 运行时数据(小说项目与配置含 API Key)
 data/
+
+# 记忆系统运行数据(向量库 / SQLite)
+memory/chroma_db/
+memory/novels.db
 
 # 系统/编辑器
 .DS_Store

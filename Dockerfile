@@ -1,35 +1,41 @@
-# syntax=docker/dockerfile:1
-# ---------- 构建阶段 ----------
-FROM python:3.12-slim AS builder
+# ---- 构建阶段:独立 venv 安装依赖(与运行环境隔离) ----
+# 若未来依赖引入编译需求,构建工具只残留于此阶段,不进最终镜像
+FROM python:3.14-slim AS builder
 
-WORKDIR /app
+WORKDIR /build
 COPY requirements.txt .
-RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 
-# ---------- 运行阶段 ----------
-FROM python:3.12-slim
+RUN python -m venv /opt/venv \
+    && /opt/venv/bin/pip install --no-cache-dir -r requirements.txt
 
-# 非 root 运行
-RUN useradd --create-home --uid 1000 novelist
+# ---- 运行阶段:仅保留 venv 产物 + 运行所需源码 ----
+FROM python:3.14-slim
+
+COPY --from=builder /opt/venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
 
 WORKDIR /app
-COPY --from=builder /install /usr/local
-COPY app ./app
-COPY static ./static
 
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    NOVEL_AGENT_DATA_DIR=/app/data
+# 仅复制运行产物(tests/scripts/文档等不进镜像)
+COPY config.py main.py ./
+COPY agents ./agents
+COPY api ./api
+COPY graph ./graph
+COPY memory ./memory
+COPY models ./models
+COPY prompts ./prompts
+COPY tools ./tools
+COPY ui ./ui
 
-RUN mkdir -p /app/data && chown -R novelist:novelist /app
-USER novelist
+# 非 root 运行(生产实践);memory/ 为运行期数据目录(chroma_db/novels.db)
+RUN useradd --create-home appuser \
+    && mkdir -p /app/memory /app/output \
+    && chown -R appuser:appuser /app
+USER appuser
 
-EXPOSE 8000
-VOLUME ["/app/data"]
+EXPOSE 8501
 
-# 容器内无 curl,用 Python 做健康探针
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD ["python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3).status == 200 else 1)"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8501/_stcore/health', timeout=3)" || exit 1
 
-# 单 worker:内存锁/限流/互斥均为进程内实现,多实例需外层保证单写者(见 README)
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+CMD ["streamlit", "run", "ui/streamlit_app.py", "--server.address", "0.0.0.0", "--server.headless", "true"]

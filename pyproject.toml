@@ -1,17 +1,24 @@
 [project]
 name = "novel-agent"
-version = "1.0.0"
-description = "墨笔 · 小说创作 Agent — FastAPI + LLM 的长篇小说创作平台"
+version = "2.0.0"
+description = "Multi-Agent 小说创作系统 【墨笔】 — LangGraph + ChromaDB 的人机协作长篇创作平台"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.14"
 license = { text = "MIT" }
 dependencies = [
-    "fastapi>=0.110",
-    "uvicorn[standard]>=0.29",
-    "openai>=1.30",
-    "anthropic>=0.30",
-    "pydantic>=2.7",
-    "pydantic-settings>=2.2",
+    "langgraph>=1.2",
+    "langchain>=1.0",
+    "langchain-openai>=1.0",
+    "langchain-anthropic>=1.0",
+    "langchain-chroma>=1.0",
+    "chromadb>=1.0",
+    "streamlit>=1.60",
+    "fastapi>=0.140",
+    "uvicorn>=0.32",
+    "python-dotenv>=1.0.0",
+    "pydantic>=2.0.0",
+    "pydantic-settings>=2.0.0",
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
@@ -27,13 +34,13 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["app", "app.core", "app.api", "app.services"]
+packages = ["agents", "graph", "memory", "tools", "prompts", "models", "api", "ui"]
 
 # ---------------- Ruff ----------------
 [tool.ruff]
 line-length = 120
-target-version = "py310"
-exclude = [".venv", "data", "static"]
+target-version = "py314"
+exclude = [".venv", "data", "output", "memory"]
 
 [tool.ruff.lint]
 select = [
@@ -50,12 +57,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["app"]
-
-[tool.ruff.lint.per-file-ignores]
-# 中文长文本(prompt 模板、mock 演示数据)无法安全折行
-"app/prompts.py" = ["E501"]
-"app/services/agent.py" = ["E501"]
+known-first-party = ["agents", "graph", "memory", "tools", "prompts", "models", "api", "ui", "config"]
 
 # ---------------- Pytest ----------------
 [tool.pytest.ini_options]

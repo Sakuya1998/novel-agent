@@ -55,13 +55,10 @@ python main.py --title "雾中剑" --genre 武侠 \
 # CLI 在人工审查处退出后,可跨进程恢复
 python main.py --resume novel_ab12cd34 --feedback approve
 
-# 3b. 迁移期 Streamlit 备用界面
-streamlit run ui/streamlit_app.py
-
-# 3c. API 服务(前后端分离模式)
+# 3b. API 服务(前后端分离模式)
 uvicorn api.server:app --reload
 
-# 3d. React + TypeScript 工作台(另开终端)
+# 3c. React + TypeScript 工作台(另开终端)
 cd frontend
 npm install
 npm run dev
@@ -84,7 +81,6 @@ novel-agent/
 ├── tools/                 # 5 个工具
 ├── prompts/               # 6 个 Prompt 模板 + PromptManager
 ├── frontend/              # React + TypeScript 独立工作台
-├── ui/streamlit_app.py    # 迁移期 Streamlit 备用界面
 ├── api/server.py          # FastAPI 服务(NDJSON 流式)
 └── output/                # 导出产物
 ```
@@ -120,7 +116,7 @@ novel-agent/
 
 一致性检查发现 `high` 严重问题时,自动回写重写(上限 `MAX_REVISION_ATTEMPTS` 次,超限转人工裁决)。
 
-检查点保存在 `CHECKPOINT_DB_PATH`。CLI、API 与 Streamlit 可顺序接管同一作品并跨进程恢复。
+检查点保存在 `CHECKPOINT_DB_PATH`。CLI 与 API 可顺序接管同一作品并跨进程恢复。
 作品等待人工审查时重复调用 `/run` 返回 HTTP 409,必须改用 `/resume`。
 
 旧版本创建且已有部分终稿、但没有 LangGraph 检查点的作品只能查看和导出。系统不会静默重建设定或覆盖旧章节。
@@ -141,11 +137,11 @@ API Key 使用 Fernet 加密写入 `SQLITE_DB_PATH`，读取接口只返回“�
 `memory/novels.db` 和 `data/model-settings.key`；丢失主密钥后原密文无法恢复，只能重新录入。
 
 工作台未配置三类模型分工时使用 `.env.example` 中的环境配置回退。React 保存的全局路由也会
-被 CLI 和 Streamlit 读取。小说创作运行期间模型设置保持只读，避免一次流程中途切换模型。
+被 CLI 和 API 读取。小说创作运行期间模型设置保持只读，避免一次流程中途切换模型。
 
 其余环境变量见 `.env.example`：温度、章节数据库与检查点路径、章节字数与重写上限、默认风格。
 
-同一部小说同一时刻只应由一个入口驱动。支持在 CLI、API、React、Streamlit 之间顺序交接,不支持多个进程同时修改同一作品。
+同一部小说同一时刻只应由一个入口驱动。支持在 CLI 与 React 工作台之间顺序交接,不支持多个进程同时修改同一作品。
 
 ## 前后端分离部署
 
@@ -161,7 +157,7 @@ docker compose up --build
 ## 测试与质量
 
 ```bash
-ruff check agents graph memory tools prompts models api ui config.py main.py
+ruff check agents graph memory tools prompts models api config.py main.py tests
 pytest
 cd frontend && npm test && npm run typecheck && npm run build
 ```

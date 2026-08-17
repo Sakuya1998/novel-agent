@@ -14,7 +14,6 @@ dependencies = [
     "langchain-chroma>=1.0",
     "chromadb>=1.0",
     "cryptography>=46.0",
-    "streamlit>=1.60",
     "fastapi>=0.140",
     "uvicorn>=0.32",
     "python-dotenv>=1.0.0",
@@ -36,7 +35,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["agents", "graph", "memory", "tools", "prompts", "models", "api", "ui"]
+packages = ["agents", "graph", "memory", "tools", "prompts", "models", "api"]
 
 # ---------------- Ruff ----------------
 [tool.ruff]
@@ -59,7 +58,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["agents", "graph", "memory", "tools", "prompts", "models", "api", "ui", "config"]
+known-first-party = ["agents", "graph", "memory", "tools", "prompts", "models", "api", "config"]
 
 # ---------------- Pytest ----------------
 [tool.pytest.ini_options]

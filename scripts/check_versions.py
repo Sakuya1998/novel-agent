@@ -7,7 +7,7 @@ from importlib.metadata import PackageNotFoundError, version
 
 PACKAGES = [
     "langgraph", "langgraph-checkpoint-sqlite", "langchain", "langchain-openai", "langchain-anthropic",
-    "langchain-chroma", "chromadb", "streamlit", "fastapi", "uvicorn",
+    "langchain-chroma", "chromadb", "fastapi", "uvicorn",
     "python-dotenv", "pydantic", "pydantic-settings", "pyyaml",
     "pytest", "pytest-asyncio", "httpx", "ruff",
 ]

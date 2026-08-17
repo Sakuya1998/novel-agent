@@ -25,7 +25,6 @@ COPY memory ./memory
 COPY models ./models
 COPY prompts ./prompts
 COPY tools ./tools
-COPY ui ./ui
 
 # 非 root 运行(生产实践);memory/ 保存数据库,data/ 保存模型密钥主密钥
 RUN useradd --create-home appuser \

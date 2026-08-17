@@ -16,7 +16,7 @@ jobs:
           cache: pip
       - run: pip install -r requirements.txt -e ".[dev]"
       - name: Lint
-        run: ruff check agents graph memory tools prompts models api ui config.py main.py tests
+        run: ruff check agents graph memory tools prompts models api config.py main.py tests
       - name: Test
         run: pytest
       - uses: actions/setup-node@v4

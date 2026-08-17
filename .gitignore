@@ -9,6 +9,7 @@ env/
 .ruff_cache/
 .python314/
 .tmp/
+.worktrees/
 
 # 机密与环境配置
 .env

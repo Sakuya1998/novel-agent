@@ -20,6 +20,7 @@ data/
 # 记忆系统运行数据(向量库 / SQLite)
 memory/chroma_db/
 memory/novels.db
+memory/checkpoints.db
 
 # 系统/编辑器
 .DS_Store

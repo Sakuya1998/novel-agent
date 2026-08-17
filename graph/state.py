@@ -7,6 +7,8 @@ StateGraph 在节点返回后自动做状态合并(chapters 用 operator.add 累
 import operator
 from typing import Annotated, Any, TypedDict
 
+from config import Config
+
 
 class NovelState(TypedDict, total=False):
     """小说创作的全局状态。"""
@@ -36,6 +38,37 @@ class NovelState(TypedDict, total=False):
     issues: list[dict[str, Any]]  # 一致性问题
     revision_count: int  # 当前章节修订次数
     max_revision_attempts: int  # 最大修订次数
+    max_chapter_words: int  # 单章目标字数上限
     human_feedback: str  # 人工反馈
+    persistence_error: str  # SQLite 定稿失败信息;非空时回到人工审查重试
     error: str  # 错误信息
     next_agent: str  # Orchestrator 决定的下一个 Agent
+
+
+def create_initial_state(
+    *,
+    novel_id: str,
+    title: str,
+    genre: str,
+    inspiration: str,
+    total_chapters: int,
+    style: str,
+    config: Config | None = None,
+) -> NovelState:
+    """为所有入口构造一致的 LangGraph 初始状态。"""
+    cfg = config or Config()
+    return {
+        "title": title,
+        "genre": genre,
+        "inspiration": inspiration,
+        "total_chapters": total_chapters,
+        "style": style,
+        "novel_id": novel_id,
+        "current_chapter": 1,
+        "current_phase": "writing",
+        "max_revision_attempts": cfg.max_revision_attempts,
+        "max_chapter_words": cfg.max_chapter_words,
+        "revision_count": 0,
+        "revision_notes": "",
+        "chapters": [],
+    }

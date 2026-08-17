@@ -72,7 +72,11 @@ def build_graph(checkpointer=None) -> CompiledStateGraph:
     workflow.add_conditional_edges(
         "human_review",
         route_from_human,
-        {"scene_writer": "scene_writer", "orchestrator": "orchestrator"},
+        {
+            "human_review": "human_review",
+            "scene_writer": "scene_writer",
+            "orchestrator": "orchestrator",
+        },
     )
 
     return workflow.compile(checkpointer=checkpointer or MemorySaver())

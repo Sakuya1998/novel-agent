@@ -5,9 +5,10 @@
 """
 
 from pathlib import Path
+from typing import Literal
 
 from dotenv import load_dotenv
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 load_dotenv()
 BASE_DIR = Path(__file__).parent
@@ -16,8 +17,10 @@ BASE_DIR = Path(__file__).parent
 class Config(BaseSettings):
     """应用配置:环境变量 > .env 文件 > 默认值。"""
 
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
     # LLM 基础配置
-    llm_provider: str = "openai"  # 支持: openai / anthropic
+    llm_provider: Literal["openai", "anthropic"] = "openai"
     model_name: str = "gpt-4o"
     temperature: float = 0.7
     max_tokens: int = 4000
@@ -32,6 +35,7 @@ class Config(BaseSettings):
     # 数据库配置
     chroma_persist_dir: str = str(BASE_DIR / "memory" / "chroma_db")
     sqlite_db_path: str = str(BASE_DIR / "memory" / "novels.db")
+    checkpoint_db_path: str = str(BASE_DIR / "memory" / "checkpoints.db")
 
     # 生成控制
     max_chapter_words: int = 6000
@@ -41,15 +45,11 @@ class Config(BaseSettings):
     # 默认风格
     default_style: str = "jin_yong"
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        extra = "ignore"
-
     def ensure_dirs(self) -> None:
         """确保运行期目录存在。"""
         Path(self.chroma_persist_dir).mkdir(parents=True, exist_ok=True)
         Path(self.sqlite_db_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(self.checkpoint_db_path).parent.mkdir(parents=True, exist_ok=True)
         (BASE_DIR / "output").mkdir(parents=True, exist_ok=True)
 
 

@@ -3,7 +3,7 @@
 import logging
 from typing import Any
 
-from agents import parse_json_block
+from agents import invoke_structured, parse_json_block
 from models.llm import get_analyzer_llm
 from prompts import fill_template
 
@@ -56,14 +56,19 @@ class ConsistencyCheckerAgent:
             chapter_content=chapter.get("content", "")[:_CONTENT_LIMIT],
         )
         logger.info("ConsistencyCheckerAgent 检查第 %s 章", number)
-        resp = await self.llm.ainvoke(prompt)
-        content = resp.content if isinstance(resp.content, str) else str(resp.content)
+        def validate_issues(items: list[dict]) -> None:
+            allowed = {"high", "medium", "low"}
+            for item in items:
+                severity = str(item.get("severity", "")).lower()
+                if severity not in allowed:
+                    raise ValueError(f"无效 severity:{severity or '<empty>'}")
 
-        # "一致性检查通过" 等自然语言回复 → 无问题
-        if "[" not in content:
-            return []
-        try:
-            return parse_json_block(content)
-        except Exception:
-            logger.warning("issues JSON 解析失败,按无问题处理")
-            return []
+        _, issues = await invoke_structured(
+            self.llm,
+            prompt,
+            parser=parse_json_block,
+            validator=validate_issues,
+            agent_name=type(self).__name__,
+            format_name="JSON",
+        )
+        return issues

@@ -55,3 +55,6 @@ def test_parse_json_block_with_noise():
     assert parse_json_block("[]") == []
     # 前后噪声中截取数组
     assert parse_json_block('结果如下 [{"type": "x"}] 以上')[0]["type"] == "x"
+
+    with pytest.raises(ValueError, match="对象"):
+        parse_json_block("[1, 2]")

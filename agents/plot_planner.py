@@ -5,7 +5,7 @@ from typing import Any
 
 from langchain_core.language_models.chat_models import BaseChatModel
 
-from agents import parse_yaml_block
+from agents import invoke_structured, parse_yaml_block
 from memory.vector_store import NovelMemory
 from models.llm import get_analyzer_llm
 from prompts import fill_template
@@ -42,10 +42,20 @@ class PlotPlannerAgent:
         )
         prompt = fill_template("plot_planner", context=context)
         logger.info("PlotPlannerAgent 开始规划 %s 章大纲", total_chapters)
-        resp = await self.llm.ainvoke(prompt)
-        content = resp.content if isinstance(resp.content, str) else str(resp.content)
+        def validate_outline(items: list[dict]) -> None:
+            chapters = {int(item.get("chapter", 0)) for item in items}
+            expected = set(range(1, total_chapters + 1))
+            if chapters != expected:
+                raise ValueError(f"章节编号必须完整覆盖 1..{total_chapters},实际为 {sorted(chapters)}")
 
-        outline = parse_yaml_block(content)
+        _, outline = await invoke_structured(
+            self.llm,
+            prompt,
+            parser=parse_yaml_block,
+            validator=validate_outline,
+            agent_name=type(self).__name__,
+            format_name="YAML",
+        )
         # 按 chapter 字段排序,保证章节顺序稳定
         outline.sort(key=lambda c: int(c.get("chapter", 0)))
 
@@ -56,6 +66,7 @@ class PlotPlannerAgent:
                     memory.store_content(
                         f"第{ch.get('chapter', '?')}章大纲:{ch.get('summary', '')}",
                         metadata={"type": "outline", "chapter": ch.get("chapter", 0)},
+                        content_id=f"{self.novel_id}:outline:{ch.get('chapter', 0)}",
                     )
             except Exception as exc:
                 logger.warning("大纲写入向量记忆失败: %s", exc)

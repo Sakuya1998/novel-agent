@@ -34,6 +34,8 @@ def route_from_human(state: NovelState) -> str:
     给出修改意见时同样置 phase=writing 但章号不变。
     区分:revision_notes 非空 → 回写;为空 → 已定稿推进 → 回 orchestrator。
     """
+    if state.get("persistence_error"):
+        return "human_review"
     if state.get("revision_notes"):
         return "scene_writer"
     return "orchestrator"

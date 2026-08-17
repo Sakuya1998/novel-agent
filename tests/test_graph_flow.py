@@ -123,3 +123,133 @@ async def test_revision_loop_on_human_feedback(monkeypatch):
     assert len(final["chapters"]) == 1
     assert "重写" in final["chapters"][0]["content"]
     assert final["revision_count"] == 0  # 定稿清零
+
+
+async def test_automatic_revision_count_stops_at_limit(monkeypatch):
+    """连续 high 问题只允许配置次数的自动重写,随后转人工审查。"""
+    from graph import nodes
+
+    class AlwaysHighChecker:
+        async def check(self, **kwargs):
+            return [{
+                "type": "设定冲突",
+                "description": "持续冲突",
+                "chapter": 1,
+                "severity": "high",
+                "suggestion": "重写",
+            }]
+
+    monkeypatch.setattr(nodes, "ConsistencyCheckerAgent", AlwaysHighChecker)
+    state = {
+        "current_draft": {"chapter_number": 1, "content": "正文"},
+        "current_phase": "consistency_check",
+        "revision_count": 0,
+        "max_revision_attempts": 2,
+    }
+
+    first = await nodes.consistency_checker_node(state)
+    assert first["revision_count"] == 1
+    assert first["current_phase"] == "writing"
+
+    state.update(first)
+    state["current_phase"] = "consistency_check"
+    second = await nodes.consistency_checker_node(state)
+    assert second["revision_count"] == 2
+    assert second["current_phase"] == "writing"
+
+    state.update(second)
+    state["current_phase"] = "consistency_check"
+    third = await nodes.consistency_checker_node(state)
+    assert "revision_count" not in third
+    assert "current_phase" not in third
+
+
+async def test_chapter_vector_memory_is_written_only_after_approval(monkeypatch, fake_llm, store):
+    """草稿不进入长期记忆,人工批准后以确定 ID 写入一次终稿。"""
+    from graph import nodes
+    from graph.builder import build_graph
+
+    records: list[dict] = []
+
+    class RecordingMemory:
+        def __init__(self, novel_id: str):
+            self.novel_id = novel_id
+
+        def get_chapter_memory(self, chapter_number: int, k: int = 3):
+            return []
+
+        def store_content(self, content: str, metadata=None, content_id: str | None = None):
+            records.append({
+                "novel_id": self.novel_id,
+                "content": content,
+                "metadata": metadata or {},
+                "content_id": content_id,
+            })
+
+    _patch_llms(monkeypatch, fake_llm)
+    for module in [
+        "agents.world_builder",
+        "agents.character_designer",
+        "agents.plot_planner",
+        "agents.scene_writer",
+    ]:
+        monkeypatch.setattr(f"{module}.NovelMemory", RecordingMemory)
+    monkeypatch.setattr(nodes, "NovelMemory", RecordingMemory, raising=False)
+    monkeypatch.setattr(nodes, "_store", store)
+    store.create_novel("memory-test", "雾中剑", total_chapters=1)
+
+    state = _initial_state()
+    state["novel_id"] = "memory-test"
+    graph = build_graph()
+    config = {"configurable": {"thread_id": "memory-test"}}
+
+    await _drive(graph, config, state)
+    assert not [r for r in records if r["metadata"].get("type") == "chapter"]
+
+    await _drive(graph, config, Command(resume="approve"))
+    chapter_records = [r for r in records if r["metadata"].get("type") == "chapter"]
+    assert len(chapter_records) == 1
+    assert chapter_records[0]["metadata"]["status"] == "final"
+    assert chapter_records[0]["content_id"] == "memory-test:chapter:1"
+
+
+async def test_sqlite_failure_prevents_chapter_finalization(monkeypatch, fake_llm):
+    """权威 SQLite 写入失败时保留可恢复人工审查现场,稍后可重试定稿。"""
+    from graph import nodes
+    from graph.builder import build_graph
+
+    class ToggleStore:
+        def __init__(self):
+            self.fail = True
+
+        def save_chapter(self, **kwargs):
+            if self.fail:
+                raise OSError("disk full")
+
+        def save_progress(self, **kwargs):
+            if self.fail:
+                raise AssertionError("save_progress 不应在章节写入失败后执行")
+
+    failing_store = ToggleStore()
+
+    _patch_llms(monkeypatch, fake_llm)
+    monkeypatch.setattr(nodes, "_store", failing_store)
+    monkeypatch.setattr(nodes, "NovelMemory", lambda novel_id: None)
+
+    state = _initial_state()
+    state["novel_id"] = "sqlite-failure"
+    graph = build_graph()
+    config = {"configurable": {"thread_id": "sqlite-failure"}}
+    await _drive(graph, config, state)
+
+    await _drive(graph, config, Command(resume="approve"))
+
+    snapshot = await graph.aget_state(config)
+    assert "human_review" in snapshot.next
+    assert snapshot.values.get("chapters") == []
+
+    failing_store.fail = False
+    await _drive(graph, config, Command(resume="approve"))
+    final = await graph.aget_state(config)
+    assert final.next == ()
+    assert len(final.values.get("chapters") or []) == 1

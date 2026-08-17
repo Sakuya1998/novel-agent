@@ -27,7 +27,7 @@ COPY prompts ./prompts
 COPY tools ./tools
 COPY ui ./ui
 
-# 非 root 运行(生产实践);memory/ 为运行期数据目录(chroma_db/novels.db)
+# 非 root 运行(生产实践);memory/ 为运行期数据目录(chroma_db/novels.db/checkpoints.db)
 RUN useradd --create-home appuser \
     && mkdir -p /app/memory /app/output \
     && chown -R appuser:appuser /app

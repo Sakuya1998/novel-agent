@@ -1,5 +1,8 @@
 """风格档案与配置测试。"""
 
+import pytest
+from pydantic import ValidationError
+
 from config import STYLE_PROFILES, Config, get_style_prompt
 
 REQUIRED_KEYS = {"name", "syntax", "sentence_length", "vocabulary", "narrative_techniques", "pacing", "examples"}
@@ -33,3 +36,14 @@ def test_config_defaults():
     assert cfg.llm_provider in {"openai", "anthropic"}
     assert cfg.total_chapters >= 1
     assert 0 <= cfg.temperature <= 2
+
+
+def test_config_rejects_unknown_llm_provider():
+    with pytest.raises(ValidationError):
+        Config(llm_provider="unknown")
+
+
+def test_config_has_persistent_checkpoint_path(tmp_path):
+    path = tmp_path / "checkpoints.db"
+    cfg = Config(checkpoint_db_path=str(path))
+    assert cfg.checkpoint_db_path == str(path)

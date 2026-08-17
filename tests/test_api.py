@@ -4,6 +4,7 @@
 非暂停态 resume 的 409、不存在的小说 404。
 """
 
+import asyncio
 import json
 
 import pytest
@@ -13,7 +14,7 @@ from api import server
 
 
 @pytest.fixture
-def api_env(tmp_path, monkeypatch):
+async def api_env(tmp_path, monkeypatch):
     """隔离的 API 环境:独立 SQLite + 重置图注册表 + 注入图定稿存储。"""
     from config import Config
     from memory.sql_store import NovelStore
@@ -21,13 +22,16 @@ def api_env(tmp_path, monkeypatch):
     cfg = Config(
         sqlite_db_path=str(tmp_path / "api.db"),
         chroma_persist_dir=str(tmp_path / "chroma"),
+        checkpoint_db_path=str(tmp_path / "checkpoints.db"),
     )
     cfg.ensure_dirs()
     isolated = NovelStore(cfg)
+    monkeypatch.setattr(server, "cfg", cfg)
     monkeypatch.setattr(server, "store", isolated)
     monkeypatch.setattr("graph.nodes._store", isolated)  # 定稿持久化同库
-    server._graphs.clear()
-    return server
+    server._novel_locks.clear()
+    async with server.lifespan(server.app):
+        yield server
 
 
 @pytest.fixture
@@ -41,7 +45,8 @@ def fake_llm_6(monkeypatch):
             "初稿正文。",
             "初稿润色。",
             "[]",
-        ]
+        ],
+        sleep=0.01,
     )
     for mod, attr in [
         ("agents.world_builder", "get_llm"),
@@ -104,6 +109,10 @@ async def test_run_interrupt_resume_flow(api_env, fake_llm_6):
         assert interrupt_ev["type"] == "interrupt"
         assert interrupt_ev["title"] == "雾起"
 
+        # 已暂停时必须显式走 resume,不能用 run 重复驱动同一检查点
+        rerun = await c.post(f"/api/novels/{nid}/run")
+        assert rerun.status_code == 409
+
         # 未暂停前对已结束流 resume:图暂停在 human_review,可 resume
         resume_lines = [
             json.loads(line)
@@ -120,6 +129,74 @@ async def test_run_interrupt_resume_flow(api_env, fake_llm_6):
         detail = (await c.get(f"/api/novels/{nid}")).json()
         assert len(detail["chapters"]) == 1
         assert detail["chapters"][0]["status"] == "final"
+
+
+async def test_resume_missing_novel_returns_404(api_env):
+    from httpx import ASGITransport, AsyncClient
+
+    async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
+        response = await c.post("/api/novels/missing/resume", json={"feedback": "approve"})
+    assert response.status_code == 404
+
+
+async def test_concurrent_run_serializes_and_second_request_gets_409(api_env, fake_llm_6):
+    from httpx import ASGITransport, AsyncClient
+
+    async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
+        nid = (await c.post("/api/novels", json={
+            "title": "并发测试", "inspiration": "灵感", "total_chapters": 1,
+        })).json()["id"]
+        first, second = await asyncio.gather(
+            c.post(f"/api/novels/{nid}/run"),
+            c.post(f"/api/novels/{nid}/run"),
+        )
+
+    assert sorted([first.status_code, second.status_code]) == [200, 409]
+
+
+async def test_legacy_incomplete_novel_without_checkpoint_is_read_only(api_env):
+    from httpx import ASGITransport, AsyncClient
+
+    api_env.store.create_novel("legacy", "旧作品", total_chapters=2, inspiration="旧灵感")
+    api_env.store.save_chapter("legacy", 1, "第一章", "旧正文", status="final")
+
+    async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
+        response = await c.post("/api/novels/legacy/run")
+
+    assert response.status_code == 409
+    assert "检查点" in response.json()["detail"]
+
+
+async def test_legacy_completed_novel_without_checkpoint_returns_end(api_env):
+    from httpx import ASGITransport, AsyncClient
+
+    api_env.store.create_novel("legacy-done", "旧完本", total_chapters=1)
+    api_env.store.save_chapter("legacy-done", 1, "第一章", "旧正文", status="final")
+
+    async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
+        response = await c.post("/api/novels/legacy-done/run")
+
+    assert response.status_code == 200
+    assert json.loads(response.text)["type"] == "end"
+    assert json.loads(response.text)["chapters_done"] == 1
+
+
+async def test_structured_output_error_preserves_retryable_checkpoint(api_env, monkeypatch):
+    from httpx import ASGITransport, AsyncClient
+
+    fake = FakeListChatModel(responses=["无效 YAML", "仍然无效"])
+    monkeypatch.setattr("agents.world_builder.get_llm", lambda **kw: fake)
+
+    async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
+        nid = (await c.post("/api/novels", json={
+            "title": "错误恢复", "inspiration": "灵感", "total_chapters": 1,
+        })).json()["id"]
+        response = await c.post(f"/api/novels/{nid}/run")
+
+    events = [json.loads(line) for line in response.text.splitlines() if line]
+    assert events[-1]["type"] == "error"
+    snapshot = await api_env.app.state.graph.aget_state({"configurable": {"thread_id": nid}})
+    assert "world_builder" in snapshot.next
 
 
 async def test_run_with_feedback_revision(api_env, fake_llm_6, monkeypatch):
@@ -154,3 +231,54 @@ async def test_run_with_feedback_revision(api_env, fake_llm_6, monkeypatch):
         chapters = (await c.get(f"/api/novels/{nid}")).json()["chapters"]
         assert len(chapters) == 1
         assert "重写" in chapters[0]["content"]
+
+
+async def test_sqlite_finalization_failure_returns_retryable_interrupt(
+    api_env, fake_llm_6, monkeypatch
+):
+    """SQLite 定稿失败要通过 NDJSON 暴露原因,修复后可再次 resume。"""
+    from httpx import ASGITransport, AsyncClient
+
+    class ToggleStore:
+        def __init__(self, delegate):
+            self.delegate = delegate
+            self.fail = True
+
+        def save_chapter(self, **kwargs):
+            if self.fail:
+                raise OSError("disk full")
+            return self.delegate.save_chapter(**kwargs)
+
+        def save_progress(self, **kwargs):
+            return self.delegate.save_progress(**kwargs)
+
+    final_store = ToggleStore(api_env.store)
+    monkeypatch.setattr("graph.nodes._store", final_store)
+
+    async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
+        nid = (await c.post("/api/novels", json={
+            "title": "持久化重试", "inspiration": "灵感", "total_chapters": 1,
+        })).json()["id"]
+        await c.post(f"/api/novels/{nid}/run")
+
+        failed = [
+            json.loads(line)
+            for line in (
+                await c.post(f"/api/novels/{nid}/resume", json={"feedback": "approve"})
+            ).text.splitlines()
+            if line
+        ]
+        assert failed[-1]["type"] == "interrupt"
+        assert "disk full" in failed[-1]["persistence_error"]
+
+        final_store.fail = False
+        recovered = [
+            json.loads(line)
+            for line in (
+                await c.post(f"/api/novels/{nid}/resume", json={"feedback": "approve"})
+            ).text.splitlines()
+            if line
+        ]
+
+    assert recovered[-1]["type"] == "end"
+    assert recovered[-1]["chapters_done"] == 1

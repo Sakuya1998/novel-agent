@@ -19,17 +19,17 @@ class Config(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
-    # LLM 基础配置
+    # 模型环境回退配置：仅在工作台尚未保存模型路由时使用
     llm_provider: Literal["openai", "anthropic"] = "openai"
     model_name: str = "gpt-4o"
     temperature: float = 0.7
     max_tokens: int = 4000
 
-    # API 密钥(从环境变量读取)
+    # 环境回退密钥；工作台中的 API Key 加密保存在 SQLite
     openai_api_key: str = ""
     anthropic_api_key: str = ""
 
-    # 嵌入模型(向量记忆)
+    # 环境回退嵌入模型；工作台路由优先
     embedding_model: str = "text-embedding-3-small"
 
     # 数据库配置

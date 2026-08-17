@@ -1,5 +1,6 @@
 # Core AI Orchestration(下限对齐实际验证版本:langgraph/langchain 1.x + interrupt)
 langgraph>=1.2
+langgraph-checkpoint-sqlite>=3.0
 langchain>=1.0
 langchain-openai>=1.0
 langchain-anthropic>=1.0

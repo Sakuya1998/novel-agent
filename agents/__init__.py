@@ -5,6 +5,14 @@
 
 import json
 import re
+from collections.abc import Callable
+from typing import Any
+
+from langchain_core.language_models.chat_models import BaseChatModel
+
+
+class StructuredOutputError(ValueError):
+    """LLM 连续两次未返回符合约定的结构化结果。"""
 
 
 def extract_code_block(text: str, lang: str) -> str:
@@ -43,11 +51,52 @@ def parse_json_block(text: str) -> list[dict]:
     except json.JSONDecodeError:
         start, end = block.find("["), block.rfind("]")
         if start == -1 or end <= start:
-            return []
+            raise ValueError("未找到 JSON 数组") from None
         data = json.loads(block[start : end + 1])
     if not isinstance(data, list):
         data = [data]
-    return [item for item in data if isinstance(item, dict)]
+    if any(not isinstance(item, dict) for item in data):
+        raise ValueError("JSON 数组中的每一项都必须是对象")
+    return data
 
 
-__all__ = ["extract_code_block", "parse_yaml_block", "parse_json_block"]
+async def invoke_structured(
+    llm: BaseChatModel,
+    prompt: str,
+    *,
+    parser: Callable[[str], Any],
+    validator: Callable[[Any], None],
+    agent_name: str,
+    format_name: str,
+) -> tuple[str, Any]:
+    """调用 LLM 并解析结构化结果;失败时追加纠正指令重试一次。"""
+    current_prompt = prompt
+    last_error: Exception | None = None
+    for attempt in range(2):
+        response = await llm.ainvoke(current_prompt)
+        content = response.content if isinstance(response.content, str) else str(response.content)
+        try:
+            parsed = parser(content)
+            validator(parsed)
+            return content, parsed
+        except Exception as exc:
+            last_error = exc
+            if attempt == 0:
+                current_prompt = (
+                    f"{prompt}\n\n## 格式纠正\n"
+                    f"上一次输出未通过 {format_name} 解析或校验:{exc}。"
+                    "请重新生成完整结果,只输出要求的结构化内容,不要解释。"
+                )
+
+    raise StructuredOutputError(
+        f"{agent_name} 连续两次未返回有效 {format_name}: {last_error}"
+    ) from last_error
+
+
+__all__ = [
+    "StructuredOutputError",
+    "extract_code_block",
+    "invoke_structured",
+    "parse_yaml_block",
+    "parse_json_block",
+]

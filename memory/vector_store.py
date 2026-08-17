@@ -39,7 +39,12 @@ class NovelMemory:
             persist_directory=self.config.chroma_persist_dir,
         )
 
-    def store_content(self, content: str, metadata: dict | None = None) -> None:
+    def store_content(
+        self,
+        content: str,
+        metadata: dict | None = None,
+        content_id: str | None = None,
+    ) -> None:
         """将创作内容写入向量记忆。
 
         Args:
@@ -49,7 +54,7 @@ class NovelMemory:
         self.vectorstore.add_texts(
             texts=[content],
             metadatas=[metadata or {}],
-            ids=[str(uuid4())],
+            ids=[content_id or str(uuid4())],
         )
 
     def search_similar(

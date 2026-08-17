@@ -19,6 +19,7 @@ from agents.scene_writer import SceneWriterAgent
 from agents.style_editor import StyleEditorAgent
 from agents.world_builder import WorldBuilderAgent
 from memory.sql_store import NovelStore
+from memory.vector_store import NovelMemory
 
 logger = logging.getLogger(__name__)
 orchestrator_agent = OrchestratorAgent()
@@ -138,6 +139,7 @@ async def consistency_checker_node(state: dict[str, Any]) -> dict[str, Any]:
         )
         updates.update({
             "revision_notes": notes,
+            "revision_count": int(state.get("revision_count", 0)) + 1,
             "current_phase": "writing",  # 条件边将路由回 scene_writer 重写
         })
     # else: 保持 phase=consistency_check,条件边放行至 human_review
@@ -155,6 +157,7 @@ async def human_review_node(state: dict[str, Any]) -> dict[str, Any]:
     """
     draft = state.get("current_draft") or {}
     number = draft.get("chapter_number", state.get("current_chapter", 0))
+    persistence_error = str(state.get("persistence_error") or "")
 
     feedback = interrupt(
         {
@@ -165,7 +168,12 @@ async def human_review_node(state: dict[str, Any]) -> dict[str, Any]:
             "word_count": draft.get("word_count", 0),
             "content": str(draft.get("content", "")),
             "issues": state.get("issues") or [],
-            "instruction": "输入 approve 定稿进入下一章;或直接输入修改意见。",
+            "persistence_error": persistence_error,
+            "instruction": (
+                "SQLite 定稿失败,请稍后再次输入 approve 重试;或输入修改意见。"
+                if persistence_error
+                else "输入 approve 定稿进入下一章;或直接输入修改意见。"
+            ),
         }
     )
 
@@ -179,12 +187,13 @@ async def human_review_node(state: dict[str, Any]) -> dict[str, Any]:
             "current_phase": "writing",
             "revision_count": 0,
             "revision_notes": "",
+            "persistence_error": "",
         }
         nid = _novel_id(state)
         if nid:
+            next_chapter = int(state.get("current_chapter", 1)) + 1
+            store = _novel_store()
             try:
-                next_chapter = int(state.get("current_chapter", 1)) + 1
-                store = _novel_store()
                 store.save_chapter(
                     novel_id=nid,
                     chapter_number=int(number),
@@ -199,11 +208,27 @@ async def human_review_node(state: dict[str, Any]) -> dict[str, Any]:
                     current_phase="writing",
                 )
             except Exception as exc:
-                logger.warning("定稿章节持久化失败: %s", exc)
+                logger.exception("SQLite 定稿写入失败,保留人工审查检查点")
+                return {
+                    "current_phase": "human_review",
+                    "revision_notes": "",
+                    "persistence_error": f"章节定稿写入 SQLite 失败:{exc}",
+                }
+            try:
+                memory = NovelMemory(nid)
+                memory.store_content(
+                    f"第{number}章 {draft.get('title', '')}:{draft.get('summary', '')}\n"
+                    f"{str(draft.get('content', ''))[:1000]}",
+                    metadata={"type": "chapter", "chapter": int(number), "status": "final"},
+                    content_id=f"{nid}:chapter:{number}",
+                )
+            except Exception as exc:
+                logger.warning("终稿章节写入向量记忆失败: %s", exc)
         return updates
 
     return {
         "revision_notes": str(feedback),
         "current_phase": "writing",
         "revision_count": int(state.get("revision_count", 0)) + 1,
+        "persistence_error": "",
     }

@@ -5,7 +5,7 @@ from typing import Any
 
 from langchain_core.language_models.chat_models import BaseChatModel
 
-from agents import parse_yaml_block
+from agents import invoke_structured, parse_yaml_block
 from memory.vector_store import NovelMemory
 from models.llm import get_llm
 from prompts import fill_template
@@ -31,21 +31,30 @@ class WorldBuilderAgent:
             user_input=f"小说标题:{title}\n类型:{genre}\n灵感:{inspiration}",
         )
         logger.info("WorldBuilderAgent 开始生成世界观: %s / %s", title, genre)
-        resp = await self.llm.ainvoke(prompt)
-        world_bible = resp.content if isinstance(resp.content, str) else str(resp.content)
+        def validate_world(items: list[dict]) -> None:
+            if not items or not items[0]:
+                raise ValueError("世界观必须是非空 YAML 映射")
+
+        world_bible, parsed = await invoke_structured(
+            self.llm,
+            prompt,
+            parser=parse_yaml_block,
+            validator=validate_world,
+            agent_name=type(self).__name__,
+            format_name="YAML",
+        )
 
         # 写入向量记忆,供后续章节检索
         if self.novel_id:
             try:
                 memory = NovelMemory(self.novel_id)
-                memory.store_content(world_bible, metadata={"type": "world_bible", "title": title})
+                memory.store_content(
+                    world_bible,
+                    metadata={"type": "world_bible", "title": title},
+                    content_id=f"{self.novel_id}:world_bible",
+                )
             except Exception as exc:  # 向量库故障不阻断创作主流程
                 logger.warning("世界观写入向量记忆失败: %s", exc)
 
-        world_yaml: dict[str, Any] = {}
-        try:
-            parsed = parse_yaml_block(world_bible)
-            world_yaml = parsed[0] if parsed else {}
-        except Exception:
-            logger.warning("世界观 YAML 解析失败,保留原文")
+        world_yaml: dict[str, Any] = parsed[0]
         return {"world_bible": world_bible, "world_yaml": world_yaml}

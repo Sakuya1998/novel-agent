@@ -8,22 +8,23 @@
     3. 「通过」或提交修改意见 → Command(resume=...) 续跑,循环直至 END
 """
 
-import asyncio
+import sys
+from pathlib import Path
 from uuid import uuid4
 
-import streamlit as st
-from langgraph.checkpoint.memory import MemorySaver
-from langgraph.types import Command
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
-from config import STYLE_PROFILES, Config
-from graph.builder import build_graph
-from memory.sql_store import NovelStore
+import streamlit as st  # noqa: E402
+from langgraph.types import Command  # noqa: E402
+
+from config import STYLE_PROFILES, Config  # noqa: E402
+from graph.state import create_initial_state  # noqa: E402
+from memory.sql_store import NovelStore  # noqa: E402
+from ui.runtime import StreamlitGraphRuntime  # noqa: E402
 
 st.set_page_config(page_title="AI 小说创作工作台", page_icon="📖", layout="wide")
-
-# 同步 API(graph.stream)贴合 Streamlit 同步运行模型,事件循环仅用于驱动
-_LOOP = asyncio.new_event_loop()
-
 
 @st.cache_resource
 def get_store() -> NovelStore:
@@ -32,42 +33,35 @@ def get_store() -> NovelStore:
     return NovelStore(cfg)
 
 
-def ensure_graph(novel_id: str):
-    """每部小说一个带 MemorySaver 的图实例(缓存于 session_state)。"""
-    graphs = st.session_state.setdefault("graphs", {})
-    if novel_id not in graphs:
-        graphs[novel_id] = build_graph(checkpointer=MemorySaver())
-    return graphs[novel_id]
+@st.cache_resource
+def get_runtime() -> StreamlitGraphRuntime:
+    cfg = Config()
+    cfg.ensure_dirs()
+    return StreamlitGraphRuntime(cfg.checkpoint_db_path)
 
 
 def drive_graph(novel_id: str, payload: object, status_box) -> list[str]:
-    """同步迭代图更新,返回本段执行过的节点名列表。"""
-    graph = ensure_graph(novel_id)
-    config = {"configurable": {"thread_id": novel_id}}
-    visited: list[str] = []
+    """通过持久异步运行时驱动图,返回本段节点名。"""
     try:
-        for update in graph.stream(payload, config, stream_mode="updates"):
-            for node, _ in (update or {}).items():
-                if node.startswith("__"):
-                    continue
-                visited.append(node)
-                status_box.write(f"✅ {node} 完成")
+        return get_runtime().stream(
+            novel_id,
+            payload,
+            on_node=lambda node: status_box.write(f"✅ {node} 完成"),
+        )
     except Exception as exc:
         status_box.error(f"执行出错:{exc}")
-    return visited
+        return []
 
 
 def pending_review(novel_id: str) -> bool:
     """判断图是否暂停在 human_review。"""
-    graph = ensure_graph(novel_id)
-    snap = graph.get_state({"configurable": {"thread_id": novel_id}})
+    snap = get_runtime().get_state(novel_id)
     return bool(snap.next) and "human_review" in snap.next
 
 
 def render_review(novel_id: str):
     """人工审查面板:章节全文 + 通过/修改意见。"""
-    graph = ensure_graph(novel_id)
-    snap = graph.get_state({"configurable": {"thread_id": novel_id}})
+    snap = get_runtime().get_state(novel_id)
     info = {}
     for task in getattr(snap, "tasks", ()):
         if hasattr(task, "interrupts") and task.interrupts:
@@ -82,6 +76,10 @@ def render_review(novel_id: str):
         }
 
     st.subheader(f"📝 第 {info.get('chapter_number', '?')} 章 {info.get('title', '')} — 待审查")
+    if info.get("persistence_error"):
+        st.error(str(info["persistence_error"]))
+    if info.get("instruction"):
+        st.caption(str(info["instruction"]))
     if info.get("issues"):
         with st.expander("⚠️ 一致性检查发现的问题", expanded=True):
             for i in info["issues"]:
@@ -118,18 +116,15 @@ with st.sidebar:
         get_store().create_novel(novel_id, title, genre, style, int(total), inspiration)
         st.session_state.pop("finished", None)
         with st.status("创作流水线启动...") as status:
-            initial_state = {
-                "title": title,
-                "genre": genre,
-                "inspiration": inspiration,
-                "total_chapters": int(total),
-                "style": style,
-                "novel_id": novel_id,
-                "current_chapter": 1,
-                "current_phase": "writing",
-                "max_revision_attempts": 2,
-                "chapters": [],
-            }
+            initial_state = create_initial_state(
+                novel_id=novel_id,
+                title=title,
+                genre=genre,
+                inspiration=inspiration,
+                total_chapters=int(total),
+                style=style,
+                config=Config(),
+            )
             drive_graph(novel_id, initial_state, status)
             status.update(label="流水线进入暂停点或完成")
         st.rerun()
@@ -156,15 +151,31 @@ if pending_review(novel_id):
 # 展示已完成章节(SQLite 定稿记录)
 store = get_store()
 chapters = store.get_all_chapters(novel_id)
+novel = store.get_novel(novel_id) or {}
+snap = get_runtime().get_state(novel_id)
 if chapters:
+    if not snap.values and len(chapters) < int(novel.get("total_chapters") or 0):
+        st.warning("此旧作品缺少 LangGraph 检查点,当前仅支持查看和导出。")
     st.header(f"📚 已定稿章节({len(chapters)} 章)")
     for ch in chapters:
         with st.expander(f"第{ch['chapter_number']}章 {ch['title'] or ''}({ch['word_count'] or 0}字)"):
             st.markdown(ch["content"] or "")
+    if snap.next:
+        st.info("上次执行在非人工节点中断,可从持久化检查点继续。")
+        if st.button("继续创作", type="primary"):
+            with st.status("继续创作流水线...") as status:
+                drive_graph(novel_id, None, status)
+                status.update(label="本段完成")
+            st.rerun()
 else:
-    graph = ensure_graph(novel_id)
-    snap = graph.get_state({"configurable": {"thread_id": novel_id}})
     if not snap.next and snap.values:
         st.success("🎉 全书创作完成!")
+    elif snap.next:
+        st.info("上次执行在非人工节点中断,可从持久化检查点继续。")
+        if st.button("继续创作", type="primary"):
+            with st.status("继续创作流水线...") as status:
+                drive_graph(novel_id, None, status)
+                status.update(label="本段完成")
+            st.rerun()
     else:
-        st.info("创作中... 请等待或重新点击侧栏按钮")
+        st.info("尚无已定稿章节。")

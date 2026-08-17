@@ -88,14 +88,4 @@ class SceneWriterAgent:
             "status": "draft",
         }
 
-        if self.novel_id:
-            try:
-                memory = NovelMemory(self.novel_id)
-                memory.store_content(
-                    f"第{number}章 {chapter['title']}:{chapter['summary']}\n{content[:1000]}",
-                    metadata={"type": "chapter", "chapter": number},
-                )
-            except Exception as exc:
-                logger.warning("章节写入向量记忆失败: %s", exc)
-
         return chapter

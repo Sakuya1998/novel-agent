@@ -32,7 +32,7 @@
 
 - **7 Agent**:Orchestrator(调度)+ WorldBuilder / CharacterDesigner / PlotPlanner / SceneWriter / StyleEditor / ConsistencyChecker
 - **LangGraph 状态机**:条件边实现质检回写循环与人工审查 interrupt 暂停/恢复
-- **三层记忆**:NovelState(短期)+ ChromaDB 向量语义检索(长期)+ SQLite 结构化持久化
+- **三层记忆**:NovelState(运行状态)+ ChromaDB 终稿语义检索(长期)+ SQLite 章节与 LangGraph 检查点持久化
 - **风格系统**:STYLE_PROFILES(金庸/古龙/村上春树/余华)六维风格档案注入写作与润色
 - **工具集**:灵感语义搜索、时间线校验、角色行为验证、节奏分析、格式导出
 
@@ -52,6 +52,9 @@ python main.py --title "雾中剑" --genre 武侠 \
     --inspiration "一个失忆剑客在雾都寻找过去,却发现每个人都在说谎。" \
     --chapters 3 --style gu_long --auto
 
+# CLI 在人工审查处退出后,可跨进程恢复
+python main.py --resume novel_ab12cd34 --feedback approve
+
 # 3b. Streamlit 人机协作界面
 streamlit run ui/streamlit_app.py
 
@@ -68,7 +71,7 @@ novel-agent/
 ├── models/llm.py          # LLM 实例管理(OpenAI / Anthropic)
 ├── agents/                # 7 个 Agent
 ├── graph/                 # LangGraph:state / nodes / edges / builder
-├── memory/                # ChromaDB 向量记忆 + SQLite 结构化存储
+├── memory/                # ChromaDB 向量记忆 + SQLite 章节/检查点存储
 ├── tools/                 # 5 个工具
 ├── prompts/               # 6 个 Prompt 模板 + PromptManager
 ├── ui/streamlit_app.py    # 人机协作界面
@@ -101,9 +104,16 @@ novel-agent/
 
 一致性检查发现 `high` 严重问题时,自动回写重写(上限 `MAX_REVISION_ATTEMPTS` 次,超限转人工裁决)。
 
+检查点保存在 `CHECKPOINT_DB_PATH`。CLI、API 与 Streamlit 可顺序接管同一作品并跨进程恢复。
+作品等待人工审查时重复调用 `/run` 返回 HTTP 409,必须改用 `/resume`。
+
+旧版本创建且已有部分终稿、但没有 LangGraph 检查点的作品只能查看和导出。系统不会静默重建设定或覆盖旧章节。
+
 ## 配置说明
 
-见 `.env.example`:LLM Provider/模型/温度、嵌入模型、存储路径、章节字数与重写上限、默认风格。
+见 `.env.example`:LLM Provider/模型/温度、嵌入模型、章节数据库与检查点路径、章节字数与重写上限、默认风格。
+
+同一部小说同一时刻只应由一个入口驱动。支持在 CLI、API、Streamlit 之间顺序交接,不支持多个进程同时修改同一作品。
 
 ## 测试与质量
 

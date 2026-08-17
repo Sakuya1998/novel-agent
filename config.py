@@ -36,6 +36,8 @@ class Config(BaseSettings):
     chroma_persist_dir: str = str(BASE_DIR / "memory" / "chroma_db")
     sqlite_db_path: str = str(BASE_DIR / "memory" / "novels.db")
     checkpoint_db_path: str = str(BASE_DIR / "memory" / "checkpoints.db")
+    model_secret_key_path: str = str(BASE_DIR / "data" / "model-settings.key")
+    frontend_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
 
     # 生成控制
     max_chapter_words: int = 6000
@@ -50,6 +52,7 @@ class Config(BaseSettings):
         Path(self.chroma_persist_dir).mkdir(parents=True, exist_ok=True)
         Path(self.sqlite_db_path).parent.mkdir(parents=True, exist_ok=True)
         Path(self.checkpoint_db_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(self.model_secret_key_path).parent.mkdir(parents=True, exist_ok=True)
         (BASE_DIR / "output").mkdir(parents=True, exist_ok=True)
 
 

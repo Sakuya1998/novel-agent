@@ -47,3 +47,15 @@ def test_config_has_persistent_checkpoint_path(tmp_path):
     path = tmp_path / "checkpoints.db"
     cfg = Config(checkpoint_db_path=str(path))
     assert cfg.checkpoint_db_path == str(path)
+
+
+def test_config_creates_model_secret_key_parent(tmp_path):
+    key_path = tmp_path / "secrets" / "model-settings.key"
+    cfg = Config(
+        sqlite_db_path=str(tmp_path / "novels.db"),
+        checkpoint_db_path=str(tmp_path / "checkpoints.db"),
+        chroma_persist_dir=str(tmp_path / "chroma"),
+        model_secret_key_path=str(key_path),
+    )
+    cfg.ensure_dirs()
+    assert key_path.parent.is_dir()

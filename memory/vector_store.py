@@ -7,9 +7,9 @@
 from uuid import uuid4
 
 from langchain_chroma import Chroma
-from langchain_openai import OpenAIEmbeddings
 
 from config import Config
+from models.resolver import ModelResolver
 
 
 class NovelMemory:
@@ -29,10 +29,7 @@ class NovelMemory:
         self.novel_id = novel_id
         self.config = config or Config()
         self.config.ensure_dirs()
-        self.embeddings = OpenAIEmbeddings(
-            model=self.config.embedding_model,
-            api_key=self.config.openai_api_key,
-        )
+        self.embeddings = ModelResolver(config=self.config).embeddings()
         self.vectorstore = Chroma(
             collection_name=f"novel_{novel_id}",
             embedding_function=self.embeddings,

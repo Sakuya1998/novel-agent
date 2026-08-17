@@ -10,17 +10,23 @@ env/
 .python314/
 .tmp/
 .worktrees/
+frontend/node_modules/
+frontend/dist/
+build/
+uv.lock
 
 # 机密与环境配置
 .env
 
 # 运行时数据(小说项目与配置含 API Key)
 data/
+*.key
 
 # 记忆系统运行数据(向量库 / SQLite)
 memory/chroma_db/
 memory/novels.db
 memory/checkpoints.db
+memory/checkpoints.db-*
 
 # 系统/编辑器
 .DS_Store

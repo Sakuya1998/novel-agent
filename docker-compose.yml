@@ -1,0 +1,21 @@
+services:
+  api:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - novel-memory:/app/memory
+      - model-secrets:/app/data
+    expose:
+      - "8000"
+
+  frontend:
+    build: ./frontend
+    depends_on:
+      - api
+    ports:
+      - "5173:80"
+
+volumes:
+  novel-memory:
+  model-secrets:

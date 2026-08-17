@@ -22,6 +22,8 @@ from langgraph.types import Command  # noqa: E402
 from config import STYLE_PROFILES, Config  # noqa: E402
 from graph.state import create_initial_state  # noqa: E402
 from memory.sql_store import NovelStore  # noqa: E402
+from models.model_settings import ModelSettingsStore  # noqa: E402
+from models.resolver import ModelConfigurationError, ModelResolver  # noqa: E402
 from ui.runtime import StreamlitGraphRuntime  # noqa: E402
 
 st.set_page_config(page_title="AI 小说创作工作台", page_icon="📖", layout="wide")
@@ -40,14 +42,24 @@ def get_runtime() -> StreamlitGraphRuntime:
     return StreamlitGraphRuntime(cfg.checkpoint_db_path)
 
 
+@st.cache_resource
+def get_model_resolver() -> ModelResolver:
+    cfg = Config()
+    return ModelResolver(config=cfg, store=ModelSettingsStore(cfg))
+
+
 def drive_graph(novel_id: str, payload: object, status_box) -> list[str]:
     """通过持久异步运行时驱动图,返回本段节点名。"""
     try:
+        get_model_resolver().validate_runtime()
         return get_runtime().stream(
             novel_id,
             payload,
             on_node=lambda node: status_box.write(f"✅ {node} 完成"),
         )
+    except ModelConfigurationError as exc:
+        status_box.error(f"模型配置不可用：{exc}。请在 React 工作台的模型设置中完成配置。")
+        return []
     except Exception as exc:
         status_box.error(f"执行出错:{exc}")
         return []
@@ -111,6 +123,11 @@ with st.sidebar:
     style = st.selectbox("风格", sorted(STYLE_PROFILES), format_func=lambda k: STYLE_PROFILES[k]["name"])
 
     if st.button("🚀 开始创作", type="primary", use_container_width=True):
+        try:
+            get_model_resolver().validate_runtime()
+        except ModelConfigurationError as exc:
+            st.error(f"模型配置不可用：{exc}。请在 React 工作台的模型设置中完成配置。")
+            st.stop()
         novel_id = f"novel_{uuid4().hex[:8]}"
         st.session_state["novel_id"] = novel_id
         get_store().create_novel(novel_id, title, genre, style, int(total), inspiration)

@@ -13,6 +13,7 @@ dependencies = [
     "langchain-anthropic>=1.0",
     "langchain-chroma>=1.0",
     "chromadb>=1.0",
+    "cryptography>=46.0",
     "streamlit>=1.60",
     "fastapi>=0.140",
     "uvicorn>=0.32",

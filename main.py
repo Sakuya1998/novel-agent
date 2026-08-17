@@ -13,6 +13,8 @@ from config import STYLE_PROFILES, Config
 from graph.builder import build_graph
 from graph.state import create_initial_state
 from memory.sql_store import NovelStore
+from models.model_settings import ModelSettingsStore
+from models.resolver import ModelResolver
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelname)s: %(message)s")
 logger = logging.getLogger("main")
@@ -37,6 +39,7 @@ async def run_novel_pipeline(
     cfg = config or Config()
     cfg.ensure_dirs()
     novel_store = store or NovelStore(cfg)
+    model_resolver = ModelResolver(config=cfg, store=ModelSettingsStore(cfg))
 
     if args.resume:
         novel_id = str(args.resume)
@@ -44,6 +47,7 @@ async def run_novel_pipeline(
         if not novel:
             raise RuntimeError(f"小说不存在:{novel_id}")
     else:
+        model_resolver.validate_runtime()
         novel_id = f"novel_{uuid4().hex[:8]}"
         novel = novel_store.create_novel(
             novel_id=novel_id,
@@ -90,6 +94,9 @@ async def run_novel_pipeline(
                 style=str(args.style),
                 config=cfg,
             )
+
+        if args.resume:
+            model_resolver.validate_runtime()
 
         print(
             f"\n{'=' * 60}\n  创作:《{novel['title']}》 "

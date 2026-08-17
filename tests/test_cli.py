@@ -51,6 +51,8 @@ async def test_cli_can_resume_persisted_review(tmp_path, monkeypatch):
         sqlite_db_path=str(tmp_path / "novels.db"),
         chroma_persist_dir=str(tmp_path / "chroma"),
         checkpoint_db_path=str(tmp_path / "checkpoints.db"),
+        model_secret_key_path=str(tmp_path / "model-settings.key"),
+        openai_api_key="test-openai-key",
     )
     store = NovelStore(cfg)
     monkeypatch.setattr("graph.nodes._store", store)
@@ -73,6 +75,31 @@ async def test_cli_can_resume_persisted_review(tmp_path, monkeypatch):
     chapters = store.get_all_chapters(novel_id)
     assert len(chapters) == 1
     assert chapters[0]["status"] == "final"
+
+
+async def test_cli_validates_models_before_creating_novel(tmp_path, monkeypatch):
+    from config import Config
+    from main import run_novel_pipeline
+    from memory.sql_store import NovelStore
+    from models.resolver import ModelConfigurationError
+
+    cfg = Config(
+        sqlite_db_path=str(tmp_path / "novels.db"),
+        chroma_persist_dir=str(tmp_path / "chroma"),
+        checkpoint_db_path=str(tmp_path / "checkpoints.db"),
+        model_secret_key_path=str(tmp_path / "model-settings.key"),
+        openai_api_key="",
+        anthropic_api_key="",
+    )
+    store = NovelStore(cfg)
+
+    def fail_validation(self):
+        raise ModelConfigurationError("未配置创作模型")
+
+    monkeypatch.setattr("main.ModelResolver.validate_runtime", fail_validation)
+    with pytest.raises(ModelConfigurationError, match="未配置创作模型"):
+        await run_novel_pipeline(_args(), config=cfg, store=store)
+    assert store.list_novels() == []
 
 
 def test_parse_args_accepts_resume_mode():

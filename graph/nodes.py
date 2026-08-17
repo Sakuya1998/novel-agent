@@ -223,7 +223,7 @@ async def human_review_node(state: dict[str, Any]) -> dict[str, Any]:
                     content_id=f"{nid}:chapter:{number}",
                 )
             except Exception as exc:
-                logger.warning("终稿章节写入向量记忆失败: %s", exc)
+                logger.warning("终稿章节写入向量记忆失败(%s)", type(exc).__name__)
         return updates
 
     return {

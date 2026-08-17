@@ -48,7 +48,7 @@ class SceneWriterAgent:
                 memory = NovelMemory(self.novel_id)
                 memory_snippets = memory.get_chapter_memory(number, k=_MEMORY_LIMIT)
             except Exception as exc:
-                logger.warning("章节记忆检索失败: %s", exc)
+                logger.warning("章节记忆检索失败(%s)", type(exc).__name__)
         memory_text = "\n".join(f"- {s[:300]}" for s in memory_snippets) or "无"
 
         # 重写指引:一致性 high 问题 / 人工修改意见(首次写作为空)

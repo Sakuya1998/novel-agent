@@ -100,6 +100,17 @@ class NovelStore:
             rows = conn.execute("SELECT * FROM novels ORDER BY created_at DESC").fetchall()
         return [dict(r) for r in rows]
 
+    def delete_novel(self, novel_id: str) -> bool:
+        """删除作品及其章节、进度记录;返回是否确实删除了一部作品。"""
+        with self._conn() as conn:
+            exists = conn.execute("SELECT 1 FROM novels WHERE id = ?", (novel_id,)).fetchone()
+            if not exists:
+                return False
+            conn.execute("DELETE FROM chapters WHERE novel_id = ?", (novel_id,))
+            conn.execute("DELETE FROM progress WHERE novel_id = ?", (novel_id,))
+            conn.execute("DELETE FROM novels WHERE id = ?", (novel_id,))
+            return True
+
     # ------------------------------------------------------------------
     # 章节
     # ------------------------------------------------------------------

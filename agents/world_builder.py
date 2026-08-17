@@ -54,7 +54,7 @@ class WorldBuilderAgent:
                     content_id=f"{self.novel_id}:world_bible",
                 )
             except Exception as exc:  # 向量库故障不阻断创作主流程
-                logger.warning("世界观写入向量记忆失败: %s", exc)
+                logger.warning("世界观写入向量记忆失败(%s)", type(exc).__name__)
 
         world_yaml: dict[str, Any] = parsed[0]
         return {"world_bible": world_bible, "world_yaml": world_yaml}

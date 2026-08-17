@@ -19,6 +19,23 @@ jobs:
         run: ruff check agents graph memory tools prompts models api ui config.py main.py tests
       - name: Test
         run: pytest
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Frontend install
+        working-directory: frontend
+        run: npm ci
+      - name: Frontend test
+        working-directory: frontend
+        run: npm test
+      - name: Frontend typecheck
+        working-directory: frontend
+        run: npm run typecheck
+      - name: Frontend build
+        working-directory: frontend
+        run: npm run build
 
   docker:
     runs-on: ubuntu-latest
@@ -27,6 +44,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build image
         run: docker build -t novel-agent:ci .
+      - name: Build frontend image
+        run: docker build -t novel-agent-frontend:ci frontend
 
   audit:
     runs-on: ubuntu-latest

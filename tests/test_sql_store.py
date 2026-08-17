@@ -49,3 +49,15 @@ def test_progress_roundtrip(store):
     # 更新覆盖
     store.save_progress("n1", current_chapter=3, current_phase="style_editing")
     assert store.get_progress("n1")["current_chapter"] == 3
+
+
+def test_delete_novel_removes_novel_chapters_and_progress(store):
+    store.create_novel("delete-me", "待删除", total_chapters=1)
+    store.save_chapter("delete-me", 1, "第一章", "正文", status="final")
+    store.save_progress("delete-me", 2, "writing", {"current_chapter": 2})
+
+    assert store.delete_novel("delete-me") is True
+    assert store.get_novel("delete-me") is None
+    assert store.get_all_chapters("delete-me") == []
+    assert store.get_progress("delete-me") is None
+    assert store.delete_novel("delete-me") is False

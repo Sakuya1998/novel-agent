@@ -60,6 +60,6 @@ class CharacterDesignerAgent:
                         content_id=f"{self.novel_id}:character:{index}",
                     )
             except Exception as exc:
-                logger.warning("角色写入向量记忆失败: %s", exc)
+                logger.warning("角色写入向量记忆失败(%s)", type(exc).__name__)
 
         return characters

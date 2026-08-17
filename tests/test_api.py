@@ -23,6 +23,8 @@ async def api_env(tmp_path, monkeypatch):
         sqlite_db_path=str(tmp_path / "api.db"),
         chroma_persist_dir=str(tmp_path / "chroma"),
         checkpoint_db_path=str(tmp_path / "checkpoints.db"),
+        model_secret_key_path=str(tmp_path / "data" / "model-settings.key"),
+        openai_api_key="test-openai-key",
     )
     cfg.ensure_dirs()
     isolated = NovelStore(cfg)
@@ -86,6 +88,29 @@ async def test_novel_crud_flow(api_env):
         assert (await c.post("/api/novels/{none}/run".replace("{none}", "none"))).status_code == 404
 
 
+async def test_delete_novel_removes_it_and_returns_404_afterward(api_env):
+    from httpx import ASGITransport, AsyncClient
+
+    async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
+        nid = (await c.post("/api/novels", json={
+            "title": "删除测试", "inspiration": "灵感", "total_chapters": 1,
+        })).json()["id"]
+        deleted = await c.delete(f"/api/novels/{nid}")
+        missing = await c.get(f"/api/novels/{nid}")
+
+    assert deleted.status_code == 200
+    assert deleted.json() == {"deleted": True, "novel_id": nid}
+    assert missing.status_code == 404
+
+
+async def test_delete_missing_novel_returns_404(api_env):
+    from httpx import ASGITransport, AsyncClient
+
+    async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
+        response = await c.delete("/api/novels/missing")
+    assert response.status_code == 404
+
+
 async def test_run_interrupt_resume_flow(api_env, fake_llm_6):
     """全链路:run 流输出节点事件 + interrupt → resume approve → end。"""
     from httpx import ASGITransport, AsyncClient
@@ -137,6 +162,277 @@ async def test_resume_missing_novel_returns_404(api_env):
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
         response = await c.post("/api/novels/missing/resume", json={"feedback": "approve"})
     assert response.status_code == 404
+
+
+async def test_state_missing_novel_returns_404(api_env):
+    from httpx import ASGITransport, AsyncClient
+
+    async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
+        response = await c.get("/api/novels/missing/state")
+    assert response.status_code == 404
+
+
+async def test_state_for_new_novel_is_idle(api_env):
+    from httpx import ASGITransport, AsyncClient
+
+    async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
+        nid = (await c.post("/api/novels", json={
+            "title": "状态测试", "inspiration": "灵感", "total_chapters": 2,
+        })).json()["id"]
+        response = await c.get(f"/api/novels/{nid}/state")
+
+    state = response.json()
+    assert state["status"] == "idle"
+    assert state["chapters_done"] == 0
+    assert state["total_chapters"] == 2
+
+
+async def test_state_for_human_review_contains_draft(api_env, fake_llm_6):
+    from httpx import ASGITransport, AsyncClient
+
+    async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
+        nid = (await c.post("/api/novels", json={
+            "title": "审查状态", "inspiration": "灵感", "total_chapters": 1,
+        })).json()["id"]
+        await c.post(f"/api/novels/{nid}/run")
+        response = await c.get(f"/api/novels/{nid}/state")
+
+    state = response.json()
+    assert state["status"] == "human_review"
+    assert state["current_draft"]["title"] == "雾起"
+    assert state["next"] == ["human_review"]
+
+
+async def test_frontend_cors_allows_vite_origin(api_env):
+    from httpx import ASGITransport, AsyncClient
+
+    async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
+        response = await c.options(
+            "/api/novels",
+            headers={
+                "Origin": "http://localhost:5173",
+                "Access-Control-Request-Method": "POST",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
+
+
+async def test_model_profile_api_never_returns_plaintext_key(api_env):
+    from httpx import ASGITransport, AsyncClient
+
+    payload = {
+        "name": "DeepSeek",
+        "provider": "deepseek",
+        "base_url": "https://api.deepseek.com",
+        "api_key": "sk-api-secret",
+        "chat_models": ["deepseek-chat"],
+        "embedding_models": [],
+    }
+    async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
+        created = await c.post("/api/model-settings/profiles", json=payload)
+        listed = await c.get("/api/model-settings")
+        updated = await c.put(
+            f"/api/model-settings/profiles/{created.json()['id']}",
+            json={**payload, "name": "DeepSeek 主服务", "api_key": ""},
+        )
+
+    assert created.status_code == 201
+    assert updated.status_code == 200
+    assert updated.json()["has_api_key"] is True
+    assert "sk-api-secret" not in created.text
+    assert "sk-api-secret" not in listed.text
+    assert "sk-api-secret" not in updated.text
+
+
+async def test_model_routes_are_atomic_and_routed_profile_cannot_be_deleted(api_env):
+    from httpx import ASGITransport, AsyncClient
+
+    profile = {
+        "name": "OpenAI",
+        "provider": "openai",
+        "base_url": "https://api.openai.com/v1",
+        "api_key": "sk-test",
+        "chat_models": ["gpt-4o"],
+        "embedding_models": ["text-embedding-3-small"],
+    }
+    async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
+        profile_id = (await c.post("/api/model-settings/profiles", json=profile)).json()["id"]
+        target = {"profile_id": profile_id, "model_name": "gpt-4o"}
+        routes = await c.put(
+            "/api/model-settings/routes",
+            json={
+                "creative": target,
+                "analysis": target,
+                "embedding": {"profile_id": profile_id, "model_name": "text-embedding-3-small"},
+            },
+        )
+        deleted = await c.delete(f"/api/model-settings/profiles/{profile_id}")
+
+    assert routes.status_code == 200
+    assert set(routes.json()) == {"creative", "analysis", "embedding"}
+    assert deleted.status_code == 409
+
+
+async def test_routed_embedding_profile_cannot_be_changed_to_anthropic(api_env):
+    from httpx import ASGITransport, AsyncClient
+
+    profile = {
+        "name": "OpenAI",
+        "provider": "openai",
+        "base_url": "https://api.openai.com/v1",
+        "api_key": "sk-test",
+        "chat_models": ["gpt-4o"],
+        "embedding_models": ["text-embedding-3-small"],
+    }
+    async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
+        profile_id = (await c.post("/api/model-settings/profiles", json=profile)).json()["id"]
+        await c.put(
+            "/api/model-settings/routes",
+            json={
+                "creative": {"profile_id": profile_id, "model_name": "gpt-4o"},
+                "analysis": {"profile_id": profile_id, "model_name": "gpt-4o"},
+                "embedding": {
+                    "profile_id": profile_id,
+                    "model_name": "text-embedding-3-small",
+                },
+            },
+        )
+        response = await c.put(
+            f"/api/model-settings/profiles/{profile_id}",
+            json={**profile, "provider": "anthropic", "base_url": ""},
+        )
+
+    assert response.status_code == 409
+    assert "嵌入" in response.json()["detail"]
+
+
+async def test_model_settings_write_returns_409_during_graph_stream(api_env):
+    from httpx import ASGITransport, AsyncClient
+
+    api_env.app.state.active_streams = 1
+    async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
+        response = await c.post(
+            "/api/model-settings/profiles",
+            json={
+                "name": "Busy",
+                "provider": "openai",
+                "base_url": "https://api.openai.com/v1",
+                "api_key": "sk-test",
+                "chat_models": ["gpt-4o"],
+                "embedding_models": ["text-embedding-3-small"],
+            },
+        )
+    api_env.app.state.active_streams = 0
+
+    assert response.status_code == 409
+
+
+async def test_model_profile_connection_endpoint_uses_redacted_result(api_env, monkeypatch):
+    from httpx import ASGITransport, AsyncClient
+
+    async def fake_test(self, profile_id, kind, model_name):
+        assert kind == "chat"
+        assert model_name == "gpt-4o"
+        return {"ok": True, "latency_ms": 12, "message": "连接成功"}
+
+    monkeypatch.setattr("models.resolver.ModelResolver.test_profile", fake_test)
+    async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
+        profile_id = (await c.post(
+            "/api/model-settings/profiles",
+            json={
+                "name": "Test",
+                "provider": "openai",
+                "base_url": "https://api.openai.com/v1",
+                "api_key": "sk-test",
+                "chat_models": ["gpt-4o"],
+                "embedding_models": ["text-embedding-3-small"],
+            },
+        )).json()["id"]
+        response = await c.post(
+            f"/api/model-settings/profiles/{profile_id}/test",
+            json={"kind": "chat", "model_name": "gpt-4o"},
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True, "latency_ms": 12, "message": "连接成功"}
+
+
+async def test_run_rejects_missing_model_configuration_before_stream(api_env, monkeypatch):
+    from httpx import ASGITransport, AsyncClient
+
+    from models.resolver import ModelConfigurationError
+
+    def fail_validation(self):
+        raise ModelConfigurationError("未配置创作模型")
+
+    monkeypatch.setattr("api.server.ModelResolver.validate_runtime", fail_validation)
+    async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
+        novel_id = (await c.post(
+            "/api/novels",
+            json={"title": "配置缺失", "inspiration": "灵感", "total_chapters": 1},
+        )).json()["id"]
+        response = await c.post(f"/api/novels/{novel_id}/run")
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "未配置创作模型"
+
+
+async def test_graph_error_event_and_logs_redact_model_secrets(api_env, monkeypatch, caplog):
+    from types import SimpleNamespace
+
+    from httpx import ASGITransport, AsyncClient
+
+    class FailingGraph:
+        async def aget_state(self, config):
+            return SimpleNamespace(values={}, next=(), tasks=())
+
+        async def astream(self, payload, config, stream_mode):
+            raise RuntimeError(
+                "provider failed with test-openai-key Authorization: Bearer header-secret"
+            )
+            yield
+
+    api_env.app.state.graph = FailingGraph()
+    caplog.set_level("ERROR", logger="api")
+    async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
+        novel_id = (await c.post(
+            "/api/novels",
+            json={"title": "错误脱敏", "inspiration": "灵感", "total_chapters": 1},
+        )).json()["id"]
+        response = await c.post(f"/api/novels/{novel_id}/run")
+
+    assert response.status_code == 200
+    assert "test-openai-key" not in response.text
+    assert "header-secret" not in response.text
+    assert "test-openai-key" not in caplog.text
+    assert "header-secret" not in caplog.text
+
+
+async def test_resume_rejects_missing_model_configuration_without_advancing_checkpoint(
+    api_env, fake_llm_6, monkeypatch
+):
+    from httpx import ASGITransport, AsyncClient
+
+    from models.resolver import ModelConfigurationError
+
+    async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
+        novel_id = (await c.post(
+            "/api/novels",
+            json={"title": "恢复配置缺失", "inspiration": "灵感", "total_chapters": 1},
+        )).json()["id"]
+        await c.post(f"/api/novels/{novel_id}/run")
+
+        def fail_validation(self):
+            raise ModelConfigurationError("未配置分析模型")
+
+        monkeypatch.setattr("api.server.ModelResolver.validate_runtime", fail_validation)
+        response = await c.post(f"/api/novels/{novel_id}/resume", json={"feedback": "approve"})
+        state = await c.get(f"/api/novels/{novel_id}/state")
+
+    assert response.status_code == 409
+    assert state.json()["status"] == "human_review"
 
 
 async def test_concurrent_run_serializes_and_second_request_gets_409(api_env, fake_llm_6):

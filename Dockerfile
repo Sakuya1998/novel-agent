@@ -27,15 +27,15 @@ COPY prompts ./prompts
 COPY tools ./tools
 COPY ui ./ui
 
-# 非 root 运行(生产实践);memory/ 为运行期数据目录(chroma_db/novels.db/checkpoints.db)
+# 非 root 运行(生产实践);memory/ 保存数据库,data/ 保存模型密钥主密钥
 RUN useradd --create-home appuser \
-    && mkdir -p /app/memory /app/output \
+    && mkdir -p /app/memory /app/data /app/output \
     && chown -R appuser:appuser /app
 USER appuser
 
-EXPOSE 8501
+EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8501/_stcore/health', timeout=3)" || exit 1
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz', timeout=3)" || exit 1
 
-CMD ["streamlit", "run", "ui/streamlit_app.py", "--server.address", "0.0.0.0", "--server.headless", "true"]
+CMD ["uvicorn", "api.server:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -69,6 +69,6 @@ class PlotPlannerAgent:
                         content_id=f"{self.novel_id}:outline:{ch.get('chapter', 0)}",
                     )
             except Exception as exc:
-                logger.warning("大纲写入向量记忆失败: %s", exc)
+                logger.warning("大纲写入向量记忆失败(%s)", type(exc).__name__)
 
         return outline

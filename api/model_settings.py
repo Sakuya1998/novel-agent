@@ -54,11 +54,24 @@ class ProfileWrite(BaseModel):
 class RouteTarget(BaseModel):
     profile_id: str = Field(min_length=1, max_length=80)
     model_name: str = Field(min_length=1, max_length=200)
+    fallback_profile_id: str = Field(default="", max_length=80)
+    fallback_model_name: str = Field(default="", max_length=200)
 
-    @field_validator("profile_id", "model_name")
+    @field_validator(
+        "profile_id",
+        "model_name",
+        "fallback_profile_id",
+        "fallback_model_name",
+    )
     @classmethod
     def strip_target(cls, value: str) -> str:
         return value.strip()
+
+    @model_validator(mode="after")
+    def validate_fallback_pair(self):
+        if bool(self.fallback_profile_id) != bool(self.fallback_model_name):
+            raise ValueError("备用路由必须同时配置服务和模型名称")
+        return self
 
 
 class RoutesWrite(BaseModel):
@@ -89,6 +102,12 @@ def _ensure_writable(request: Request) -> None:
         raise HTTPException(409, "小说创作正在运行，完成或暂停后才能修改模型设置")
 
 
+def _ensure_owner(request: Request) -> None:
+    principal = getattr(request.state, "principal", None)
+    if principal is None or principal.role != "owner":
+        raise HTTPException(403, "只有工作区所有者可以管理模型设置")
+
+
 def _raise_store_error(exc: ModelSettingsError) -> None:
     if isinstance(exc, ModelProfileNotFoundError):
         raise HTTPException(404, str(exc)) from exc
@@ -109,6 +128,7 @@ async def get_model_settings(request: Request) -> dict:
 
 @router.post("/profiles", status_code=status.HTTP_201_CREATED)
 async def create_model_profile(request: Request, payload: ProfileWrite) -> dict:
+    _ensure_owner(request)
     _ensure_writable(request)
     try:
         return _store(request).create_profile(**payload.model_dump(exclude={"clear_api_key"}))
@@ -118,6 +138,7 @@ async def create_model_profile(request: Request, payload: ProfileWrite) -> dict:
 
 @router.put("/profiles/{profile_id}")
 async def update_model_profile(profile_id: str, request: Request, payload: ProfileWrite) -> dict:
+    _ensure_owner(request)
     _ensure_writable(request)
     try:
         return _store(request).update_profile(profile_id, **payload.model_dump())
@@ -127,6 +148,7 @@ async def update_model_profile(profile_id: str, request: Request, payload: Profi
 
 @router.delete("/profiles/{profile_id}")
 async def delete_model_profile(profile_id: str, request: Request) -> dict:
+    _ensure_owner(request)
     _ensure_writable(request)
     try:
         if not _store(request).delete_profile(profile_id):
@@ -138,6 +160,7 @@ async def delete_model_profile(profile_id: str, request: Request) -> dict:
 
 @router.put("/routes")
 async def update_model_routes(request: Request, payload: RoutesWrite) -> dict:
+    _ensure_owner(request)
     _ensure_writable(request)
     try:
         return _store(request).save_routes(payload.model_dump())
@@ -151,6 +174,7 @@ async def test_model_profile(
     request: Request,
     payload: ConnectionTestRequest,
 ) -> dict:
+    _ensure_owner(request)
     _ensure_writable(request)
     resolver = ModelResolver(
         config=request.app.state.config,

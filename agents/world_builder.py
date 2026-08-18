@@ -7,6 +7,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 
 from agents import invoke_structured, parse_yaml_block
 from memory.vector_store import NovelMemory
+from models.creative_brief import format_creative_brief
 from models.llm import get_llm
 from prompts import fill_template
 
@@ -20,7 +21,13 @@ class WorldBuilderAgent:
         self.llm = llm or get_llm(temperature=0.8)
         self.novel_id = novel_id
 
-    async def generate(self, genre: str, inspiration: str, title: str = "") -> dict[str, Any]:
+    async def generate(
+        self,
+        genre: str,
+        inspiration: str,
+        title: str = "",
+        creative_brief: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """生成世界观圣经。
 
         Returns:
@@ -28,7 +35,10 @@ class WorldBuilderAgent:
         """
         prompt = fill_template(
             "world_builder",
-            user_input=f"小说标题:{title}\n类型:{genre}\n灵感:{inspiration}",
+            user_input=(
+                f"小说标题:{title}\n类型:{genre}\n灵感:{inspiration}\n\n"
+                f"{format_creative_brief(creative_brief)}"
+            ),
         )
         logger.info("WorldBuilderAgent 开始生成世界观: %s / %s", title, genre)
         def validate_world(items: list[dict]) -> None:

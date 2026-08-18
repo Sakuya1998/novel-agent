@@ -56,6 +56,7 @@ async def run_novel_pipeline(
             style=args.style,
             total_chapters=args.chapters,
             inspiration=args.inspiration,
+            creative_brief=None,
         )
 
     graph_config = {"configurable": {"thread_id": novel_id}}
@@ -77,7 +78,40 @@ async def run_novel_pipeline(
                 if args.auto:
                     state_values: object = Command(resume="approve")
                 elif args.feedback is not None:
-                    state_values = Command(resume=args.feedback)
+                    if args.version_number is not None:
+                        chapter_number = int(
+                            snapshot.values.get("current_draft", {}).get(
+                                "chapter_number",
+                                snapshot.values.get("current_chapter", 0),
+                            )
+                        )
+                        if novel_store.get_chapter_version(
+                            novel_id,
+                            chapter_number,
+                            args.version_number,
+                        ) is None:
+                            raise RuntimeError(f"章节版本 v{args.version_number} 不存在")
+                        state_values = Command(resume={
+                            "action": "restore_version",
+                            "version_number": args.version_number,
+                        })
+                    elif args.scene_number is not None:
+                        scene_numbers = {
+                            int(item.get("scene_number", 0))
+                            for item in (
+                                snapshot.values.get("current_draft", {}).get("scene_plan")
+                                or snapshot.values.get("scene_plan")
+                                or []
+                            )
+                        }
+                        if args.scene_number not in scene_numbers:
+                            raise RuntimeError(f"场景 {args.scene_number} 不存在")
+                        state_values = Command(resume={
+                            "feedback": args.feedback,
+                            "scene_number": args.scene_number,
+                        })
+                    else:
+                        state_values = Command(resume=args.feedback)
                 else:
                     print(f"小说 {novel_id} 正在等待人工审查。")
                     print(f"恢复命令: python main.py --resume {novel_id} --feedback approve")
@@ -92,6 +126,8 @@ async def run_novel_pipeline(
                 inspiration=str(args.inspiration),
                 total_chapters=int(args.chapters),
                 style=str(args.style),
+                creative_brief=novel.get("creative_brief"),
+                creative_brief_version=int(novel.get("creative_brief_version", 1) or 1),
                 config=cfg,
             )
 
@@ -150,16 +186,40 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--auto", action="store_true", help="人工审查自动通过")
     parser.add_argument("--resume", metavar="NOVEL_ID", help="恢复已有作品的持久化检查点")
     parser.add_argument("--feedback", help="恢复人工审查时提交 approve 或修改意见")
+    parser.add_argument(
+        "--scene-number",
+        type=int,
+        choices=range(1, 9),
+        help="将 --feedback 仅应用于指定场景(1-8)",
+    )
+    parser.add_argument(
+        "--version-number",
+        type=int,
+        help="恢复人工审查时回滚到指定章节版本",
+    )
     args = parser.parse_args(argv)
 
     if args.resume:
         if args.title or args.inspiration:
             parser.error("--resume 不能与 --title/--inspiration 同时使用")
+        if args.scene_number is not None and args.version_number is not None:
+            parser.error("--scene-number 与 --version-number 不能同时使用")
+        if args.scene_number is not None:
+            if not args.feedback:
+                parser.error("--scene-number 必须同时提供 --feedback")
+            if args.feedback.strip().lower() in {"approve", "通过", "y", "yes"}:
+                parser.error("--scene-number 不能与通过指令一起使用")
+        if args.version_number is not None and args.feedback is None:
+            args.feedback = "restore"
     else:
         if not args.title or not args.inspiration:
             parser.error("新建作品必须提供 --title 和 --inspiration")
         if args.feedback is not None:
             parser.error("--feedback 只能与 --resume 一起使用")
+        if args.scene_number is not None:
+            parser.error("--scene-number 只能与 --resume 一起使用")
+        if args.version_number is not None:
+            parser.error("--version-number 只能与 --resume 一起使用")
     return args
 
 

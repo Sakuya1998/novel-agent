@@ -24,24 +24,37 @@ async def test_writing_loop_routing(orch):
     base = {"world_bible": "x", "characters": [{"name": "甲"}], "outline": [{"chapter": 1}],
             "current_chapter": 1, "total_chapters": 3}
 
-    assert await orch.decide_next({**base, "current_phase": "writing"}) == "scene_writer"
+    assert await orch.decide_next({**base, "current_phase": "writing"}) == "scene_planner"
+    assert await orch.decide_next({**base, "current_phase": "writing", "scene_plan": []}) == "scene_planner"
+    assert await orch.decide_next({**base, "current_phase": "writing", "scene_plan": {}}) == "scene_planner"
+    assert await orch.decide_next({
+        **base,
+        "current_phase": "writing",
+        "scene_plan": {"scene_number": 1},
+    }) == "scene_planner"
+    assert await orch.decide_next({
+        **base,
+        "current_phase": "writing",
+        "scene_plan": [{"scene_number": 1}],
+    }) == "scene_writer"
     assert await orch.decide_next({**base, "current_phase": "style_editing"}) == "style_editor"
     assert await orch.decide_next({**base, "current_phase": "consistency_check"}) == "consistency_checker"
     # 未知阶段回退写作
-    assert await orch.decide_next({**base, "current_phase": "???"}) == "scene_writer"
+    assert await orch.decide_next({**base, "current_phase": "???"}) == "scene_planner"
 
 
 async def test_end_when_all_chapters_done(orch):
     done = {"world_bible": "x", "characters": [{}], "outline": [{}],
             "current_chapter": 4, "total_chapters": 3}
-    assert await orch.decide_next(done) == "END"
+    assert await orch.decide_next(done) == "book_auditor"
+    assert await orch.decide_next({**done, "book_audit_completed": True}) == "END"
     assert await orch.chapter_complete(done) is True
 
 
 def test_route_from_orchestrator():
     assert route_from_orchestrator({"next_agent": "world_builder"}) == "world_builder"
     assert route_from_orchestrator({"next_agent": "END"}) == "end"
-    assert route_from_orchestrator({}) == "scene_writer"  # 缺省安全回退
+    assert route_from_orchestrator({}) == "scene_planner"  # 缺省安全回退
 
 
 def test_route_from_consistency():
@@ -53,4 +66,9 @@ def test_route_from_consistency():
 def test_route_from_human():
     # 有修改意见 → 回写;已定稿(revision_notes 清空)→ 回主控推进下一章/END
     assert route_from_human({"revision_notes": "节奏太慢"}) == "scene_writer"
+    assert route_from_human({
+        "revision_notes": "加强追逐",
+        "revision_scene_number": 2,
+    }) == "scene_rewriter"
+    assert route_from_human({"current_phase": "consistency_check"}) == "consistency_checker"
     assert route_from_human({"revision_notes": ""}) == "orchestrator"

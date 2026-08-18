@@ -15,6 +15,7 @@ dependencies = [
     "chromadb>=1.0",
     "cryptography>=46.0",
     "fastapi>=0.140",
+    "python-multipart>=0.0.20",
     "uvicorn>=0.32",
     "python-dotenv>=1.0.0",
     "pydantic>=2.0.0",
@@ -36,6 +37,7 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
 packages = ["agents", "graph", "memory", "tools", "prompts", "models", "api"]
+py-modules = ["config", "security"]
 
 # ---------------- Ruff ----------------
 [tool.ruff]

@@ -7,10 +7,25 @@ from langchain_core.language_models.chat_models import BaseChatModel
 
 from agents import invoke_structured, parse_yaml_block
 from memory.vector_store import NovelMemory
+from models.creative_brief import format_creative_brief
 from models.llm import get_llm
 from prompts import fill_template
 
 logger = logging.getLogger(__name__)
+
+
+def validate_characters(items: list[dict[str, Any]]) -> None:
+    """校验可持久化、可供后续 Agent 使用的角色列表。"""
+    if not items:
+        raise ValueError("角色列表不能为空")
+    if any(not isinstance(item, dict) for item in items):
+        raise ValueError("每个角色都必须是对象")
+    names = [str(item.get("name", "")).strip() for item in items]
+    if any(not name for name in names):
+        raise ValueError("每个角色都必须包含 name")
+    normalized = [name.casefold() for name in names]
+    if len(set(normalized)) != len(normalized):
+        raise ValueError("角色 name 不能重复")
 
 
 class CharacterDesignerAgent:
@@ -20,7 +35,12 @@ class CharacterDesignerAgent:
         self.llm = llm or get_llm(temperature=0.7)
         self.novel_id = novel_id
 
-    async def generate(self, world_bible: str, inspiration: str) -> list[dict[str, Any]]:
+    async def generate(
+        self,
+        world_bible: str,
+        inspiration: str,
+        creative_brief: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
         """生成主要角色列表。
 
         Args:
@@ -30,15 +50,12 @@ class CharacterDesignerAgent:
         Returns:
             角色档案列表(name/role/personality/relationships/speech_pattern/behavior/arc)
         """
-        context = f"## 世界观圣经\n{world_bible}\n\n## 用户灵感\n{inspiration}"
+        context = (
+            f"## 世界观圣经\n{world_bible}\n\n## 用户灵感\n{inspiration}\n\n"
+            f"{format_creative_brief(creative_brief)}"
+        )
         prompt = fill_template("character_designer", context=context)
         logger.info("CharacterDesignerAgent 开始设计角色")
-        def validate_characters(items: list[dict]) -> None:
-            if not items:
-                raise ValueError("角色列表不能为空")
-            if any(not str(item.get("name", "")).strip() for item in items):
-                raise ValueError("每个角色都必须包含 name")
-
         _, characters = await invoke_structured(
             self.llm,
             prompt,

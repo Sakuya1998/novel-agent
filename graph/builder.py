@@ -2,11 +2,12 @@
 
 拓扑:
     entry → orchestrator ─(星型调度)→ world_builder / character_designer /
-              plot_planner / scene_writer / style_editor ─→ 回 orchestrator
-    scene_writer → style_editor → consistency_checker
+              plot_planner / scene_planner / scene_writer / style_editor ─→ 回 orchestrator
+    scene_planner → scene_writer → style_editor → consistency_checker
     consistency_checker ─(high 问题未超限)→ scene_writer   [回写循环]
-                      └─(通过)→ human_review ─(修改意见)→ scene_writer
-                                            └─(approve)→ orchestrator → END
+                      └─(通过)→ human_review ─(整章意见)→ scene_writer
+                                            ├─(场景意见)→ scene_rewriter → consistency_checker
+                                            └─(approve)→ orchestrator → book_auditor → END
 
 人工审查节点使用 langgraph.types.interrupt 暂停,配合 checkpointer 断点续跑。
 """
@@ -16,7 +17,13 @@ from langgraph.graph import END, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
 from graph import nodes
-from graph.edges import route_from_consistency, route_from_human, route_from_orchestrator
+from graph.edges import (
+    route_after_plot_planner,
+    route_after_scene_planner,
+    route_from_consistency,
+    route_from_human,
+    route_from_orchestrator,
+)
 from graph.state import NovelState
 
 
@@ -36,10 +43,15 @@ def build_graph(checkpointer=None) -> CompiledStateGraph:
     workflow.add_node("world_builder", nodes.world_builder_node)
     workflow.add_node("character_designer", nodes.character_designer_node)
     workflow.add_node("plot_planner", nodes.plot_planner_node)
+    workflow.add_node("blueprint_review", nodes.blueprint_review_node)
+    workflow.add_node("scene_planner", nodes.scene_planner_node)
+    workflow.add_node("scene_review", nodes.scene_review_node)
     workflow.add_node("scene_writer", nodes.scene_writer_node)
+    workflow.add_node("scene_rewriter", nodes.scene_rewriter_node)
     workflow.add_node("style_editor", nodes.style_editor_node)
     workflow.add_node("consistency_checker", nodes.consistency_checker_node)
     workflow.add_node("human_review", nodes.human_review_node)
+    workflow.add_node("book_auditor", nodes.book_auditor_node)
 
     workflow.set_entry_point("orchestrator")
 
@@ -51,17 +63,30 @@ def build_graph(checkpointer=None) -> CompiledStateGraph:
             "world_builder": "world_builder",
             "character_designer": "character_designer",
             "plot_planner": "plot_planner",
+            "scene_planner": "scene_planner",
             "scene_writer": "scene_writer",
             "style_editor": "style_editor",
             "consistency_checker": "consistency_checker",
+            "book_auditor": "book_auditor",
             "end": END,
         },
     )
     workflow.add_edge("world_builder", "orchestrator")
     workflow.add_edge("character_designer", "orchestrator")
-    workflow.add_edge("plot_planner", "orchestrator")
+    workflow.add_conditional_edges(
+        "plot_planner",
+        route_after_plot_planner,
+        {"blueprint_review": "blueprint_review", "orchestrator": "orchestrator"},
+    )
+    workflow.add_edge("blueprint_review", "orchestrator")
 
     # 章节创作流水线(线性推进 + 条件回写)
+    workflow.add_conditional_edges(
+        "scene_planner",
+        route_after_scene_planner,
+        {"scene_review": "scene_review", "scene_writer": "scene_writer"},
+    )
+    workflow.add_edge("scene_review", "scene_writer")
     workflow.add_edge("scene_writer", "style_editor")
     workflow.add_edge("style_editor", "consistency_checker")
     workflow.add_conditional_edges(
@@ -74,10 +99,14 @@ def build_graph(checkpointer=None) -> CompiledStateGraph:
         route_from_human,
         {
             "human_review": "human_review",
+            "consistency_checker": "consistency_checker",
+            "scene_rewriter": "scene_rewriter",
             "scene_writer": "scene_writer",
             "orchestrator": "orchestrator",
         },
     )
+    workflow.add_edge("scene_rewriter", "consistency_checker")
+    workflow.add_edge("book_auditor", END)
 
     return workflow.compile(checkpointer=checkpointer or MemorySaver())
 

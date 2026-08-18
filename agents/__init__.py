@@ -1,4 +1,4 @@
-"""Agent 包:7 个 Agent(Orchestrator + 6 专业 Agent)。
+"""Agent 包:专业 Agent 与结构化输出辅助。
 
 输出解析辅助:从 LLM 文本中稳健提取 YAML/JSON 结构。
 """

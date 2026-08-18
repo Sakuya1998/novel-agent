@@ -20,7 +20,12 @@ function firstTarget(settings: ModelSettings, purpose: RoutePurpose): ModelRoute
   if (current) return current;
   const profile = settings.profiles.find((item) => purpose !== "embedding" || item.provider !== "anthropic");
   const models = purpose === "embedding" ? profile?.embedding_models : profile?.chat_models;
-  return { profile_id: profile?.id ?? "", model_name: models?.[0] ?? "" };
+  return {
+    profile_id: profile?.id ?? "",
+    model_name: models?.[0] ?? "",
+    fallback_profile_id: "",
+    fallback_model_name: "",
+  };
 }
 
 export function ModelRoutesPanel({ settings, disabled, busyAction, onSave }: Props) {
@@ -42,7 +47,13 @@ export function ModelRoutesPanel({ settings, disabled, busyAction, onSave }: Pro
     () => new Map(settings.profiles.map((profile) => [profile.id, profile])),
     [settings.profiles],
   );
-  const valid = routeMeta.every(({ purpose }) => routes[purpose].profile_id && routes[purpose].model_name.trim());
+  const valid = routeMeta.every(({ purpose }) => {
+    const route = routes[purpose];
+    return route.profile_id
+      && route.model_name.trim()
+      && (purpose === "embedding"
+        || Boolean(route.fallback_profile_id) === Boolean(route.fallback_model_name?.trim()));
+  });
   const formDisabled = disabled || Boolean(busyAction);
 
   function changeProfile(purpose: RoutePurpose, profileId: string) {
@@ -50,7 +61,23 @@ export function ModelRoutesPanel({ settings, disabled, busyAction, onSave }: Pro
     const models = purpose === "embedding" ? profile?.embedding_models : profile?.chat_models;
     setRoutes((current) => ({
       ...current,
-      [purpose]: { profile_id: profileId, model_name: models?.[0] ?? "" },
+      [purpose]: {
+        ...current[purpose],
+        profile_id: profileId,
+        model_name: models?.[0] ?? "",
+      },
+    }));
+  }
+
+  function changeFallbackProfile(purpose: RoutePurpose, profileId: string) {
+    const profile = profileMap.get(profileId);
+    setRoutes((current) => ({
+      ...current,
+      [purpose]: {
+        ...current[purpose],
+        fallback_profile_id: profileId,
+        fallback_model_name: profile?.chat_models[0] ?? "",
+      },
     }));
   }
 
@@ -65,24 +92,45 @@ export function ModelRoutesPanel({ settings, disabled, busyAction, onSave }: Pro
         const eligibleProfiles = settings.profiles.filter((profile) => purpose !== "embedding" || profile.provider !== "anthropic");
         const selectedProfile = profileMap.get(routes[purpose].profile_id);
         const modelOptions = purpose === "embedding" ? selectedProfile?.embedding_models : selectedProfile?.chat_models;
-        const listId = `${purpose}-models`;
+        const fallbackProfile = profileMap.get(routes[purpose].fallback_profile_id ?? "");
+        const listId = `${purpose}-primary-models`;
+        const fallbackListId = `${purpose}-fallback-models`;
         return <div className="model-route-row" key={purpose}>
           <div className="model-route-copy"><strong>{label}</strong><small>{description}</small></div>
-          <label>模型服务
-            <select value={routes[purpose].profile_id} disabled={formDisabled} onChange={(event) => changeProfile(purpose, event.target.value)}>
-              <option value="">选择服务</option>
-              {eligibleProfiles.map((profile) => <option value={profile.id} key={profile.id}>{profile.name}</option>)}
-            </select>
-          </label>
-          <label>模型名称
-            <input
-              list={listId}
-              value={routes[purpose].model_name}
-              disabled={formDisabled || !routes[purpose].profile_id}
-              onChange={(event) => setRoutes((current) => ({ ...current, [purpose]: { ...current[purpose], model_name: event.target.value } }))}
-            />
-            <datalist id={listId}>{(modelOptions ?? []).map((model) => <option value={model} key={model} />)}</datalist>
-          </label>
+          <div className="model-route-controls">
+            <label>主模型服务
+              <select value={routes[purpose].profile_id} disabled={formDisabled} onChange={(event) => changeProfile(purpose, event.target.value)}>
+                <option value="">选择服务</option>
+                {eligibleProfiles.map((profile) => <option value={profile.id} key={profile.id}>{profile.name}</option>)}
+              </select>
+            </label>
+            <label>主模型名称
+              <input
+                list={listId}
+                value={routes[purpose].model_name}
+                disabled={formDisabled || !routes[purpose].profile_id}
+                onChange={(event) => setRoutes((current) => ({ ...current, [purpose]: { ...current[purpose], model_name: event.target.value } }))}
+              />
+              <datalist id={listId}>{(modelOptions ?? []).map((model) => <option value={model} key={model} />)}</datalist>
+            </label>
+            {purpose !== "embedding" && <>
+              <label>备用模型服务
+                <select value={routes[purpose].fallback_profile_id ?? ""} disabled={formDisabled} onChange={(event) => changeFallbackProfile(purpose, event.target.value)}>
+                  <option value="">不使用备用模型</option>
+                  {settings.profiles.map((profile) => <option value={profile.id} key={profile.id}>{profile.name}</option>)}
+                </select>
+              </label>
+              <label>备用模型名称
+                <input
+                  list={fallbackListId}
+                  value={routes[purpose].fallback_model_name ?? ""}
+                  disabled={formDisabled || !routes[purpose].fallback_profile_id}
+                  onChange={(event) => setRoutes((current) => ({ ...current, [purpose]: { ...current[purpose], fallback_model_name: event.target.value } }))}
+                />
+                <datalist id={fallbackListId}>{(fallbackProfile?.chat_models ?? []).map((model) => <option value={model} key={model} />)}</datalist>
+              </label>
+            </>}
+          </div>
         </div>;
       })}
     </div>

@@ -1,21 +1,55 @@
 services:
   api:
     build: .
+    restart: unless-stopped
+    init: true
     env_file:
       - .env
+    environment:
+      APP_ENVIRONMENT: production
     volumes:
       - novel-memory:/app/memory
       - model-secrets:/app/data
+      - novel-output:/app/output
+    read_only: true
+    tmpfs:
+      - /tmp:size=128m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    stop_grace_period: 45s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
     expose:
       - "8000"
 
   frontend:
     build: ./frontend
+    restart: unless-stopped
+    init: true
     depends_on:
-      - api
+      api:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx:size=32m
+      - /var/run:size=1m
+      - /tmp:size=32m
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
     ports:
       - "5173:80"
 
 volumes:
   novel-memory:
   model-secrets:
+  novel-output:

@@ -29,11 +29,16 @@ def main() -> int:
     require("COPY scripts ./scripts" in dockerfile, "Dockerfile 未复制运行时维护脚本")
     require("USER appuser" in dockerfile, "API 镜像必须使用非 root 用户")
     require("/readyz" in dockerfile, "API healthcheck 必须检查 /readyz")
+    require("chroma run" not in dockerfile.lower(), "API 镜像不得启动存在已知漏洞的 Chroma HTTP 服务")
 
     services = compose.get("services", {})
     api = services.get("api", {})
     frontend = services.get("frontend", {})
     require(api and frontend, "Compose 必须包含 api 和 frontend 服务")
+    require(
+        not any("chroma" in str(service_name).lower() for service_name in services),
+        "Compose 不得暴露存在已知漏洞的 Chroma HTTP 服务",
+    )
     require(api.get("read_only") is True, "API 根文件系统必须只读")
     require("ALL" in api.get("cap_drop", []), "API 必须删除全部 Linux capabilities")
     require("no-new-privileges:true" in api.get("security_opt", []), "API 必须启用 no-new-privileges")

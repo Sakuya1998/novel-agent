@@ -44,6 +44,11 @@ jobs:
     needs: lint-test
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - name: Install deployment check dependencies
+        run: pip install python-dotenv pydantic-settings pyyaml
       - name: Prepare production smoke environment
         run: |
           cp .env.production.example .env
@@ -79,7 +84,10 @@ jobs:
           python-version: "3.14"
       - run: pip install pip-audit
       - name: Dependency audit
-        run: pip-audit -r requirements.txt --strict
+        # PYSEC-2026-311 affects Chroma's HTTP server. This project only uses
+        # embedded persistent storage; check_deployment.py enforces that the
+        # vulnerable server is neither started nor added as a Compose service.
+        run: pip-audit -r requirements.txt --strict --ignore-vuln PYSEC-2026-311
       - uses: actions/setup-node@v4
         with:
           node-version: "24"

@@ -11,7 +11,9 @@ def _patch_llms(monkeypatch, fake_llm) -> None:
         ("agents.world_builder", "get_llm"),
         ("agents.character_designer", "get_llm"),
         ("agents.plot_planner", "get_analyzer_llm"),
+        ("agents.scene_planner", "get_analyzer_llm"),
         ("agents.scene_writer", "get_llm"),
+        ("agents.scene_rewriter", "get_llm"),
         ("agents.style_editor", "get_llm"),
         ("agents.consistency_checker", "get_analyzer_llm"),
     ]:
@@ -28,6 +30,8 @@ def _args(**overrides) -> Namespace:
         "auto": False,
         "resume": None,
         "feedback": None,
+        "scene_number": None,
+        "version_number": None,
     }
     values.update(overrides)
     return Namespace(**values)
@@ -42,6 +46,9 @@ async def test_cli_can_resume_persisted_review(tmp_path, monkeypatch):
         "```yaml\n世界观名称: 测试世界\n```",
         "- name: 林寒\n  role: 主角\n",
         "- chapter: 1\n  title: 雾起\n  estimated_words: 100\n",
+        "- scene_number: 1\n  goal: 进入雾都\n  conflict: 城门盘查\n"
+        "  turn: 发现追兵\n  location: 城门\n  characters: [林寒]\n"
+        "  emotion: 紧张\n  estimated_words: 100\n",
         "初稿正文。",
         "润色正文。",
         "[]",
@@ -108,6 +115,31 @@ def test_parse_args_accepts_resume_mode():
     args = parse_args(["--resume", "novel_1", "--feedback", "approve"])
     assert args.resume == "novel_1"
     assert args.feedback == "approve"
+
+
+def test_parse_args_accepts_scene_scoped_feedback():
+    from main import parse_args
+
+    args = parse_args([
+        "--resume", "novel_1", "--feedback", "加强追逐", "--scene-number", "2",
+    ])
+    assert args.scene_number == 2
+    assert args.feedback == "加强追逐"
+
+
+def test_parse_args_rejects_scene_number_without_feedback():
+    from main import parse_args
+
+    with pytest.raises(SystemExit):
+        parse_args(["--resume", "novel_1", "--scene-number", "2"])
+
+
+def test_parse_args_accepts_version_restore_without_feedback():
+    from main import parse_args
+
+    args = parse_args(["--resume", "novel_1", "--version-number", "3"])
+    assert args.version_number == 3
+    assert args.feedback == "restore"
 
 
 def test_parse_args_rejects_out_of_range_chapters():

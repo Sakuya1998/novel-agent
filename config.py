@@ -19,11 +19,22 @@ class Config(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
+    # 部署环境。开发/测试保持兼容；生产环境启动时会拒绝不安全认证配置。
+    app_environment: Literal["development", "test", "production"] = "development"
+
     # 模型环境回退配置：仅在工作台尚未保存模型路由时使用
     llm_provider: Literal["openai", "anthropic"] = "openai"
     model_name: str = "gpt-4o"
     temperature: float = 0.7
     max_tokens: int = 4000
+    model_timeout_seconds: float = 120.0
+    model_retry_attempts: int = 2
+    model_retry_base_delay: float = 0.5
+    max_novel_tokens: int = 0  # 0 表示不限制
+
+    # 后台任务租约：允许多进程部署时只有持有未过期租约的 Worker 执行任务
+    run_job_lease_seconds: int = 60
+    run_job_heartbeat_seconds: int = 15
 
     # 环境回退密钥；工作台中的 API Key 加密保存在 SQLite
     openai_api_key: str = ""
@@ -39,10 +50,26 @@ class Config(BaseSettings):
     model_secret_key_path: str = str(BASE_DIR / "data" / "model-settings.key")
     frontend_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
 
+    # 认证默认关闭以兼容旧 CLI/本地单用户部署；生产环境应显式开启。
+    auth_enabled: bool = False
+    auth_session_hours: int = 24 * 30
+    auth_rate_limit_window_seconds: int = 60
+    auth_rate_limit_max_attempts: int = 10
+    sensitive_rate_limit_window_seconds: int = 60
+    sensitive_rate_limit_max_attempts: int = 30
+
+    # 导入安全：限制单个上传文件大小，避免压缩炸弹或意外大文件拖垮 API。
+    max_import_bytes: int = 50 * 1024 * 1024
+    background_transfer_bytes: int = 10 * 1024 * 1024
+    transfer_dir: str = str(BASE_DIR / "data" / "transfers")
+    runtime_backup_dir: str = str(BASE_DIR / "data" / "runtime-backups")
+    backup_retention_count: int = 7
+
     # 生成控制
     max_chapter_words: int = 6000
     total_chapters: int = 10
     max_revision_attempts: int = 3
+    quality_gate_threshold: float = 70.0
 
     # 默认风格
     default_style: str = "jin_yong"
@@ -53,7 +80,33 @@ class Config(BaseSettings):
         Path(self.sqlite_db_path).parent.mkdir(parents=True, exist_ok=True)
         Path(self.checkpoint_db_path).parent.mkdir(parents=True, exist_ok=True)
         Path(self.model_secret_key_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(self.transfer_dir).mkdir(parents=True, exist_ok=True)
+        Path(self.runtime_backup_dir).mkdir(parents=True, exist_ok=True)
         (BASE_DIR / "output").mkdir(parents=True, exist_ok=True)
+
+
+def validate_production_config(config: Config) -> None:
+    """生产模式下拒绝匿名认证、通配 CORS 或无效认证保护参数。"""
+    if config.app_environment != "production":
+        return
+    errors: list[str] = []
+    if not config.auth_enabled:
+        errors.append("AUTH_ENABLED 必须为 true")
+    origins = [origin.strip() for origin in config.frontend_origins.split(",") if origin.strip()]
+    if "*" in origins:
+        errors.append("FRONTEND_ORIGINS 不能包含通配符 *")
+    if int(config.auth_session_hours) < 1:
+        errors.append("AUTH_SESSION_HOURS 必须大于 0")
+    if int(config.auth_rate_limit_window_seconds) < 10:
+        errors.append("AUTH_RATE_LIMIT_WINDOW_SECONDS 不能小于 10")
+    if not 1 <= int(config.auth_rate_limit_max_attempts) <= 1000:
+        errors.append("AUTH_RATE_LIMIT_MAX_ATTEMPTS 必须在 1 到 1000 之间")
+    if int(config.sensitive_rate_limit_window_seconds) < 10:
+        errors.append("SENSITIVE_RATE_LIMIT_WINDOW_SECONDS 不能小于 10")
+    if not 1 <= int(config.sensitive_rate_limit_max_attempts) <= 1000:
+        errors.append("SENSITIVE_RATE_LIMIT_MAX_ATTEMPTS 必须在 1 到 1000 之间")
+    if errors:
+        raise RuntimeError("生产配置不安全: " + "; ".join(errors))
 
 
 # ---------------------------------------------------------------------------

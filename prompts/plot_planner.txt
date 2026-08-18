@@ -15,7 +15,7 @@
 - 每章要有明确的冲突和悬念
 - 标注每章的出场角色
 - 标注每章的情绪曲线(紧张/舒缓/悲伤/喜悦)
-- 标注每章需要回收的伏笔
+- 用 narrative_beats 标注每章埋设、推进或回收的叙事线程
 - 标注每章的字数建议
 
 ## 输出格式要求
@@ -29,7 +29,13 @@
   conflict: 本章核心冲突
   cliffhanger: 章末悬念
   characters: [出场角色]
-  foreshadowing: [埋设/回收的伏笔]
+  narrative_beats:
+    - thread: 跨章节线程的稳定名称
+      action: setup/develop/resolve
+      description: 本章如何埋设、推进或回收
+      kind: foreshadowing/mystery/quest/relationship/promise
+      priority: major/minor
+      due_chapter: 计划最迟回收章节
   emotion: 情绪基调
   estimated_words: 预计字数
 ```
@@ -38,7 +44,8 @@
 
 - 第一章必须在最短时间内建立冲突和悬念
 - 中段不能塌陷,每3章至少有一个小高潮
-- 结局必须回收所有主要伏笔
+- 同一线程在所有章节中必须使用完全相同的 thread 名称
+- 所有 major 线程必须先 setup,并在结局前有明确的 resolve beat
 - 避免说教式的情节安排
 
 {context}

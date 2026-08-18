@@ -9,9 +9,14 @@ ALL_TEMPLATES = [
     "world_builder",
     "character_designer",
     "plot_planner",
+    "scene_planner",
     "scene_writer",
+    "scene_rewriter",
     "style_editor",
     "consistency_checker",
+    "chapter_digest",
+    "replanner",
+    "book_auditor",
 ]
 
 
@@ -23,8 +28,20 @@ def test_all_templates_loadable():
 
 def test_variables_extracted():
     assert "style_prompt" in get_variables("scene_writer")
+    assert "canon_context" in get_variables("scene_planner")
     assert "chapter_number" in get_variables("consistency_checker")
+    assert "chapter_content" in get_variables("chapter_digest")
+    assert "future_outline" in get_variables("replanner")
+    assert "hierarchical_memory" in get_variables("book_auditor")
     assert "user_input" in get_variables("world_builder")
+    for template in (
+        "scene_planner",
+        "scene_rewriter",
+        "style_editor",
+        "replanner",
+        "book_auditor",
+    ):
+        assert "creative_brief" in get_variables(template)
 
 
 def test_fill_template_roundtrip():

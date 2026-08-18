@@ -4,7 +4,7 @@ import re
 from dataclasses import dataclass, replace
 from functools import lru_cache
 from time import perf_counter
-from typing import Literal
+from typing import Literal, cast
 
 from langchain_anthropic import ChatAnthropic
 from langchain_core.embeddings import Embeddings
@@ -18,6 +18,7 @@ from models.model_settings import (
     ProviderName,
     RoutePurpose,
 )
+from models.runtime import ManagedChatModel
 
 
 class ModelConfigurationError(RuntimeError):
@@ -94,7 +95,11 @@ def sanitize_provider_error(exc: Exception, secrets: list[str] | tuple[str, ...]
         return "认证失败，请检查 API Key"
     if "timeout" in lowered or "timed out" in lowered:
         return "连接超时，请检查 API 地址和网络"
-    if type(exc).__name__ in {"ModelConfigurationError", "StructuredOutputError"}:
+    if type(exc).__name__ in {
+        "ModelBudgetExceededError",
+        "ModelConfigurationError",
+        "StructuredOutputError",
+    }:
         return message[:300]
     return f"模型服务调用失败 ({type(exc).__name__})"
 
@@ -114,26 +119,69 @@ class ModelResolver:
         routes = self.store.get_routes()
         target = routes.get(purpose)
         if target is not None:
-            try:
-                profile = self.store.get_runtime_profile(target["profile_id"])
-            except ModelProfileNotFoundError as exc:
-                raise ModelConfigurationError(f"{purpose} 路由引用的模型服务不存在") from exc
-            api_key = str(profile["api_key"])
-            if not api_key:
-                raise ModelConfigurationError(f"{purpose} 模型服务尚未配置 API Key")
-            return ResolvedModel(
-                purpose=purpose,
-                provider=profile["provider"],
-                model_name=target["model_name"],
-                base_url=profile["base_url"],
-                api_key=api_key,
-                max_tokens=self.config.max_tokens,
-                source="database",
+            return self._resolve_database_target(
+                purpose,
+                target["profile_id"],
+                target["model_name"],
+                label="主",
             )
 
         if routes:
             raise ModelConfigurationError(f"尚未配置完整的 {purpose} 模型路由")
         return self._resolve_environment(purpose)
+
+    def resolve_chat_candidates(
+        self,
+        purpose: Literal["creative", "analysis"],
+    ) -> list[ResolvedModel]:
+        routes = self.store.get_routes()
+        target = routes.get(purpose)
+        if target is None:
+            if routes:
+                raise ModelConfigurationError(f"尚未配置完整的 {purpose} 模型路由")
+            return [self._resolve_environment(purpose)]
+
+        candidates = [self._resolve_database_target(
+            purpose,
+            target["profile_id"],
+            target["model_name"],
+            label="主",
+        )]
+        fallback_profile_id = target.get("fallback_profile_id")
+        fallback_model_name = target.get("fallback_model_name")
+        if fallback_profile_id and fallback_model_name:
+            candidates.append(self._resolve_database_target(
+                purpose,
+                fallback_profile_id,
+                fallback_model_name,
+                label="备用",
+            ))
+        return candidates
+
+    def _resolve_database_target(
+        self,
+        purpose: RoutePurpose,
+        profile_id: str,
+        model_name: str,
+        *,
+        label: str,
+    ) -> ResolvedModel:
+        try:
+            profile = self.store.get_runtime_profile(profile_id)
+        except ModelProfileNotFoundError as exc:
+            raise ModelConfigurationError(f"{purpose} {label}路由引用的模型服务不存在") from exc
+        api_key = str(profile["api_key"])
+        if not api_key:
+            raise ModelConfigurationError(f"{purpose} {label}模型服务尚未配置 API Key")
+        return ResolvedModel(
+            purpose=purpose,
+            provider=profile["provider"],
+            model_name=model_name,
+            base_url=profile["base_url"],
+            api_key=api_key,
+            max_tokens=self.config.max_tokens,
+            source="database",
+        )
 
     def _resolve_environment(self, purpose: RoutePurpose) -> ResolvedModel:
         if purpose == "embedding":
@@ -162,10 +210,11 @@ class ModelResolver:
         )
 
     def validate_runtime(self) -> None:
-        for purpose in ("creative", "analysis", "embedding"):
-            resolved = self.resolve(purpose)  # type: ignore[arg-type]
-            if purpose == "embedding" and resolved.provider == "anthropic":
-                raise ModelConfigurationError("Anthropic 服务不能用于嵌入模型")
+        self.resolve_chat_candidates("creative")
+        self.resolve_chat_candidates("analysis")
+        resolved = self.resolve("embedding")
+        if resolved.provider == "anthropic":
+            raise ModelConfigurationError("Anthropic 服务不能用于嵌入模型")
 
     def chat(
         self,
@@ -174,13 +223,23 @@ class ModelResolver:
         model_name: str | None = None,
         streaming: bool = True,
     ) -> BaseChatModel:
-        resolved = self.resolve(purpose)
+        resolved_candidates = self.resolve_chat_candidates(purpose)
         if model_name:
-            resolved = replace(resolved, model_name=model_name)
+            resolved_candidates[0] = replace(resolved_candidates[0], model_name=model_name)
         selected_temperature = self.config.temperature if temperature is None else temperature
-        if resolved.provider == "anthropic":
-            return _build_anthropic_chat(resolved, selected_temperature, streaming)
-        return _build_openai_chat(resolved, selected_temperature, streaming)
+        candidates: list[tuple[ResolvedModel, BaseChatModel]] = []
+        for resolved in resolved_candidates:
+            if resolved.provider == "anthropic":
+                model = _build_anthropic_chat(resolved, selected_temperature, streaming)
+            else:
+                model = _build_openai_chat(resolved, selected_temperature, streaming)
+            candidates.append((resolved, model))
+        return cast(BaseChatModel, ManagedChatModel(
+            candidates,
+            purpose=purpose,
+            config=self.config,
+            store=self.store,
+        ))
 
     def embeddings(self) -> Embeddings:
         resolved = self.resolve("embedding")

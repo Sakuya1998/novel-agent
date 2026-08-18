@@ -156,6 +156,46 @@ def test_updated_route_does_not_reuse_old_client(resolver_env, monkeypatch):
     assert built == ["gpt-4o", "gpt-4.1"]
 
 
+def test_chat_route_resolves_explicit_fallback(resolver_env):
+    cfg, store = resolver_env
+    primary = add_profile(
+        store,
+        name="Primary",
+        provider="openai",
+        base_url="https://api.openai.com/v1",
+        chat_model="gpt-4o",
+    )
+    fallback = add_profile(
+        store,
+        name="Fallback",
+        provider="anthropic",
+        base_url="",
+        chat_model="claude-sonnet-4-5",
+    )
+    embed = add_profile(
+        store,
+        name="Embed",
+        provider="openai",
+        base_url="https://api.openai.com/v1",
+        chat_model="gpt-4o",
+    )
+    store.save_routes({
+        "creative": {
+            "profile_id": primary["id"],
+            "model_name": "gpt-4o",
+            "fallback_profile_id": fallback["id"],
+            "fallback_model_name": "claude-sonnet-4-5",
+        },
+        "analysis": {"profile_id": primary["id"], "model_name": "gpt-4o"},
+        "embedding": {"profile_id": embed["id"], "model_name": "embed-small"},
+    })
+
+    candidates = ModelResolver(config=cfg, store=store).resolve_chat_candidates("creative")
+
+    assert [item.model_name for item in candidates] == ["gpt-4o", "claude-sonnet-4-5"]
+    assert [item.provider for item in candidates] == ["openai", "anthropic"]
+
+
 def test_qwen_embedding_uses_selected_base_url(resolver_env, monkeypatch):
     cfg, store = resolver_env
     qwen = add_profile(

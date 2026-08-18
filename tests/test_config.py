@@ -38,6 +38,14 @@ def test_config_defaults():
     assert 0 <= cfg.temperature <= 2
 
 
+def test_production_template_enables_required_guards():
+    cfg = Config(_env_file=".env.production.example")
+    assert cfg.app_environment == "production"
+    assert cfg.auth_enabled is True
+    assert "*" not in cfg.frontend_origins
+    assert cfg.auth_rate_limit_max_attempts > 0
+
+
 def test_config_rejects_unknown_llm_provider():
     with pytest.raises(ValidationError):
         Config(llm_provider="unknown")

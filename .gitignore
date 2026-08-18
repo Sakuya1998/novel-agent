@@ -12,6 +12,8 @@ env/
 .worktrees/
 frontend/node_modules/
 frontend/dist/
+# 前端统一使用 npm，避免本地 pnpm 生成第二份锁文件进入提交。
+frontend/pnpm-lock.yaml
 build/
 uv.lock
 

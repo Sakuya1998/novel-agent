@@ -5,8 +5,10 @@ import logging
 from langchain_core.language_models.chat_models import BaseChatModel
 
 from config import get_style_prompt
+from models.creative_brief import format_creative_brief
 from models.llm import get_llm
 from prompts import fill_template
+from tools.scene_tools import ensure_scene_drafts, format_scene_drafts, join_scene_drafts, segment_scene_content
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +19,12 @@ class StyleEditorAgent:
     def __init__(self, llm: BaseChatModel | None = None):
         self.llm = llm or get_llm(temperature=0.7)
 
-    async def polish(self, chapter: dict, style: str) -> dict:
+    async def polish(
+        self,
+        chapter: dict,
+        style: str,
+        creative_brief: dict | None = None,
+    ) -> dict:
         """润色章节正文。
 
         Args:
@@ -29,17 +36,25 @@ class StyleEditorAgent:
         """
         number = chapter.get("chapter_number", chapter.get("chapter", 0))
         style_prompt = get_style_prompt(style)
+        scene_plan = chapter.get("scene_plan") or []
+        scene_drafts = ensure_scene_drafts(chapter)
+        chapter_draft = format_scene_drafts(scene_drafts) if scene_drafts else chapter.get("content", "")
         prompt = fill_template(
             "style_editor",
             style_prompt=style_prompt,
-            chapter_draft=chapter.get("content", ""),
+            creative_brief=format_creative_brief(creative_brief),
+            chapter_draft=chapter_draft,
         )
         logger.info("StyleEditorAgent 开始润色第 %s 章", number)
         resp = await self.llm.ainvoke(prompt)
-        content = resp.content if isinstance(resp.content, str) else str(resp.content)
+        raw_content = resp.content if isinstance(resp.content, str) else str(resp.content)
+        polished_scenes = segment_scene_content(raw_content, scene_plan) if scene_plan else []
+        content = join_scene_drafts(polished_scenes) if polished_scenes else raw_content.strip()
 
         polished = dict(chapter)
-        polished["content"] = content.strip()
+        polished["content"] = content
         polished["word_count"] = len(content)
         polished["status"] = "polished"
+        if polished_scenes:
+            polished["scene_drafts"] = polished_scenes
         return polished

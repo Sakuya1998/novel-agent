@@ -7,10 +7,69 @@ from langchain_core.language_models.chat_models import BaseChatModel
 
 from agents import invoke_structured, parse_yaml_block
 from memory.vector_store import NovelMemory
+from models.creative_brief import format_creative_brief
 from models.llm import get_analyzer_llm
 from prompts import fill_template
 
 logger = logging.getLogger(__name__)
+
+_BEAT_ACTIONS = {"setup", "develop", "resolve"}
+
+
+def validate_outline(items: list[dict[str, Any]], total_chapters: int) -> None:
+    """校验章节完整覆盖，并校验跨章叙事线程。"""
+    if any(not isinstance(item, dict) for item in items):
+        raise ValueError("每个大纲条目都必须是对象")
+    chapters = [int(item.get("chapter", 0) or 0) for item in items]
+    expected = list(range(1, total_chapters + 1))
+    if sorted(chapters) != expected or len(chapters) != len(set(chapters)):
+        raise ValueError(f"章节编号必须完整覆盖 1..{total_chapters},实际为 {sorted(chapters)}")
+    validate_narrative_outline(items, total_chapters)
+
+
+def validate_narrative_outline(items: list[dict[str, Any]], total_chapters: int) -> None:
+    """校验结构化叙事线程，防止主要伏笔只有埋设没有回收。"""
+    threads: dict[str, dict[str, Any]] = {}
+    for item in items:
+        chapter = int(item.get("chapter", 0) or 0)
+        beats = item.get("narrative_beats") or []
+        if not isinstance(beats, list):
+            raise ValueError(f"第{chapter}章 narrative_beats 必须是列表")
+        for beat in beats:
+            if not isinstance(beat, dict):
+                raise ValueError(f"第{chapter}章 narrative beat 必须是对象")
+            title = str(beat.get("thread", "")).strip()
+            action = str(beat.get("action", "")).strip().casefold()
+            if not title:
+                raise ValueError(f"第{chapter}章 narrative beat 缺少 thread")
+            if action not in _BEAT_ACTIONS:
+                raise ValueError(f"线程「{title}」action 必须是 setup/develop/resolve")
+            due = beat.get("due_chapter")
+            if due not in (None, "") and not 1 <= int(due) <= total_chapters:
+                raise ValueError(f"线程「{title}」due_chapter 超出全书章节范围")
+            record = threads.setdefault(title.casefold(), {
+                "title": title,
+                "priority": "minor",
+                "setup": [],
+                "resolve": [],
+                "due": [],
+            })
+            if str(beat.get("priority", "minor")).casefold() == "major":
+                record["priority"] = "major"
+            if due not in (None, ""):
+                record["due"].append(int(due))
+            if action in {"setup", "resolve"}:
+                record[action].append(chapter)
+
+    for record in threads.values():
+        setups = record["setup"]
+        resolves = record["resolve"]
+        if resolves and setups and min(resolves) < min(setups):
+            raise ValueError(f"线程「{record['title']}」在埋设前就已回收")
+        if record["priority"] == "major" and setups and not resolves:
+            raise ValueError(f"主要线程「{record['title']}」缺少 resolve beat")
+        if resolves and record["due"] and min(resolves) > min(record["due"]):
+            raise ValueError(f"线程「{record['title']}」resolve 晚于 due_chapter")
 
 
 class PlotPlannerAgent:
@@ -26,6 +85,7 @@ class PlotPlannerAgent:
         characters: list[dict[str, Any]],
         total_chapters: int,
         inspiration: str,
+        creative_brief: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]]:
         """规划全书章节大纲。
 
@@ -38,21 +98,16 @@ class PlotPlannerAgent:
         )
         context = (
             f"## 世界观圣经\n{world_bible}\n\n## 角色列表\n{char_lines}\n\n"
-            f"## 用户灵感\n{inspiration}\n\n## 总章节数\n{total_chapters} 章"
+            f"## 用户灵感\n{inspiration}\n\n## 总章节数\n{total_chapters} 章\n\n"
+            f"{format_creative_brief(creative_brief)}"
         )
         prompt = fill_template("plot_planner", context=context)
         logger.info("PlotPlannerAgent 开始规划 %s 章大纲", total_chapters)
-        def validate_outline(items: list[dict]) -> None:
-            chapters = {int(item.get("chapter", 0)) for item in items}
-            expected = set(range(1, total_chapters + 1))
-            if chapters != expected:
-                raise ValueError(f"章节编号必须完整覆盖 1..{total_chapters},实际为 {sorted(chapters)}")
-
         _, outline = await invoke_structured(
             self.llm,
             prompt,
             parser=parse_yaml_block,
-            validator=validate_outline,
+            validator=lambda items: validate_outline(items, total_chapters),
             agent_name=type(self).__name__,
             format_name="YAML",
         )

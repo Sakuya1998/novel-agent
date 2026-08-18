@@ -164,3 +164,218 @@ def test_public_settings_include_templates_and_database_source(settings_store):
     assert "deepseek" in public["templates"]
     assert public["profiles"][0]["has_api_key"] is True
     assert "api_key" not in public["profiles"][0]
+
+
+def test_fallback_route_is_persisted_and_blocks_profile_deletion(settings_store):
+    primary = create_profile(settings_store, name="Primary")
+    fallback = create_profile(settings_store, name="Fallback")
+    embed = create_profile(settings_store, name="Embed", provider="qwen")
+    routes = valid_routes(primary["id"], embed["id"])
+    routes["creative"].update({
+        "fallback_profile_id": fallback["id"],
+        "fallback_model_name": "gpt-4o",
+    })
+
+    saved = settings_store.save_routes(routes)
+
+    assert saved["creative"]["fallback_profile_id"] == fallback["id"]
+    with pytest.raises(ProfileInUseError):
+        settings_store.delete_profile(fallback["id"])
+
+
+def test_model_usage_can_be_aggregated_and_deleted(settings_store):
+    settings_store.record_model_call(
+        novel_id="novel_1",
+        agent="scene_writer",
+        purpose="creative",
+        provider="openai",
+        model_name="gpt-4o",
+        attempt=1,
+        fallback_used=False,
+        success=True,
+        duration_ms=25,
+        input_tokens=10,
+        output_tokens=20,
+        usage_estimated=False,
+    )
+
+    usage = settings_store.get_model_usage("novel_1")
+    assert usage["total_tokens"] == 30
+    assert usage["duration_ms"] == 25
+    assert usage["by_agent"][0]["agent"] == "scene_writer"
+
+    settings_store.delete_novel_metrics("novel_1")
+    assert settings_store.get_model_usage("novel_1")["attempts"] == 0
+    assert settings_store.list_model_traces("novel_1") == []
+
+
+def test_model_traces_can_filter_by_agent_without_returning_content(settings_store):
+    settings_store.record_model_call(
+        novel_id="novel_1",
+        agent="scene_writer",
+        purpose="creative",
+        provider="openai",
+        model_name="gpt-4o",
+        attempt=1,
+        fallback_used=False,
+        success=True,
+        duration_ms=12,
+        input_tokens=3,
+        output_tokens=4,
+        usage_estimated=True,
+        call_id="call-1",
+        trace_id="trace-1",
+        input_hash="input-hash",
+        output_hash="output-hash",
+        input_chars=20,
+        output_chars=30,
+    )
+    settings_store.record_model_call(
+        novel_id="novel_1",
+        agent="style_editor",
+        purpose="creative",
+        provider="openai",
+        model_name="gpt-4o",
+        attempt=1,
+        fallback_used=False,
+        success=False,
+        duration_ms=8,
+        input_tokens=3,
+        output_tokens=0,
+        usage_estimated=True,
+        error_type="TimeoutError",
+        call_id="call-2",
+        trace_id="trace-2",
+        input_hash="other-input",
+        input_chars=8,
+    )
+
+    traces = settings_store.list_model_traces("novel_1", agent="scene_writer")
+    assert len(traces) == 1
+    assert traces[0]["trace_id"] == "trace-1"
+    assert traces[0]["success"] is True
+    assert traces[0]["usage_estimated"] is True
+    assert "input" not in traces[0]
+    assert "output" not in traces[0]
+
+
+def test_legacy_model_metrics_table_is_migrated_for_traces(tmp_path):
+    db_path = tmp_path / "legacy-model-metrics.db"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE model_call_metrics (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                novel_id TEXT,
+                agent TEXT NOT NULL,
+                purpose TEXT NOT NULL,
+                provider TEXT NOT NULL,
+                model_name TEXT NOT NULL,
+                attempt INTEGER NOT NULL,
+                fallback_used INTEGER NOT NULL DEFAULT 0,
+                success INTEGER NOT NULL,
+                duration_ms INTEGER NOT NULL,
+                input_tokens INTEGER NOT NULL DEFAULT 0,
+                output_tokens INTEGER NOT NULL DEFAULT 0,
+                usage_estimated INTEGER NOT NULL DEFAULT 0,
+                error_type TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+    cfg = Config(
+        sqlite_db_path=str(db_path),
+        checkpoint_db_path=str(tmp_path / "checkpoints.db"),
+        chroma_persist_dir=str(tmp_path / "chroma"),
+        model_secret_key_path=str(tmp_path / "model-settings.key"),
+    )
+    store = ModelSettingsStore(cfg)
+
+    store.record_model_call(
+        novel_id="novel_legacy",
+        agent="scene_writer",
+        purpose="creative",
+        provider="openai",
+        model_name="gpt-test",
+        attempt=1,
+        fallback_used=False,
+        success=True,
+        duration_ms=1,
+        input_tokens=1,
+        output_tokens=1,
+        usage_estimated=False,
+        trace_id="trace-migrated",
+    )
+
+    assert store.list_model_traces("novel_legacy")[0]["trace_id"] == "trace-migrated"
+
+
+def test_model_profiles_and_routes_are_tenant_scoped(settings_store):
+    from security import Principal, reset_current_principal, set_current_principal
+
+    alice = Principal("user-a", "tenant-a", "alice", "owner")
+    bob = Principal("user-b", "tenant-b", "bob", "owner")
+    alice_token = set_current_principal(alice)
+    try:
+        profile = settings_store.create_profile(
+            name="共享名称",
+            provider="openai",
+            base_url="",
+            api_key="key-a",
+            chat_models=["gpt-a"],
+            embedding_models=["embed-a"],
+        )
+        settings_store.save_routes({
+            "creative": {"profile_id": profile["id"], "model_name": "gpt-a"},
+            "analysis": {"profile_id": profile["id"], "model_name": "gpt-a"},
+            "embedding": {"profile_id": profile["id"], "model_name": "embed-a"},
+        })
+    finally:
+        reset_current_principal(alice_token)
+
+    bob_token = set_current_principal(bob)
+    try:
+        assert settings_store.list_profiles() == []
+        assert settings_store.get_routes() == {}
+        bob_profile = settings_store.create_profile(
+            name="共享名称",
+            provider="openai",
+            base_url="",
+            api_key="key-b",
+            chat_models=["gpt-b"],
+            embedding_models=["embed-b"],
+        )
+        assert bob_profile["id"] != profile["id"]
+    finally:
+        reset_current_principal(bob_token)
+
+
+def test_legacy_model_routes_are_migrated_to_local_tenant(tmp_path):
+    db_path = tmp_path / "legacy-model-routes.db"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "CREATE TABLE model_profiles (id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, "
+            "provider TEXT NOT NULL, base_url TEXT NOT NULL DEFAULT '', "
+            "api_key_encrypted BLOB NOT NULL DEFAULT X'', chat_models_json TEXT NOT NULL DEFAULT '[]', "
+            "embedding_models_json TEXT NOT NULL DEFAULT '[]', created_at TEXT NOT NULL, updated_at TEXT NOT NULL)"
+        )
+        conn.execute(
+            "CREATE TABLE model_routes (purpose TEXT PRIMARY KEY, profile_id TEXT NOT NULL, "
+            "model_name TEXT NOT NULL, updated_at TEXT NOT NULL)"
+        )
+        conn.execute(
+            "INSERT INTO model_profiles VALUES ('p1', 'Legacy', 'openai', '', X'', '[]', '[]', 'now', 'now')"
+        )
+        conn.execute("INSERT INTO model_routes VALUES ('creative', 'p1', 'gpt-old', 'now')")
+    cfg = Config(
+        sqlite_db_path=str(db_path),
+        checkpoint_db_path=str(tmp_path / "checkpoints.db"),
+        chroma_persist_dir=str(tmp_path / "chroma"),
+        model_secret_key_path=str(tmp_path / "model-settings.key"),
+    )
+    store = ModelSettingsStore(cfg)
+
+    assert store.get_routes()["creative"]["model_name"] == "gpt-old"
+    with sqlite3.connect(db_path) as conn:
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(model_routes)")}
+    assert "tenant_id" in columns

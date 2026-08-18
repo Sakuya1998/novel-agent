@@ -4,9 +4,10 @@
     世界观未建 → world_builder
     角色未建 → character_designer
     大纲未建 → plot_planner
-    按阶段路由:writing → scene_writer / style_editing → style_editor /
+    按阶段路由:writing → scene_planner(新章)或 scene_writer(修订) /
+    style_editing → style_editor /
     consistency_check → consistency_checker
-    章节全部完成 → END
+    章节全部完成 → book_auditor → END
 """
 
 import logging
@@ -44,14 +45,20 @@ class OrchestratorAgent:
         # 阶段 4-6:逐章创作循环
         phase = state.get("current_phase", "writing")
         if current > total:
-            logger.info("Orchestrator: 全书 %s 章完成 → END", total)
+            if not state.get("book_audit_completed", False):
+                logger.info("Orchestrator: 全书 %s 章完成 → book_auditor", total)
+                return "book_auditor"
+            logger.info("Orchestrator: 全书 %s 章终审完成 → END", total)
             return "END"
 
+        scene_plan = state.get("scene_plan")
+        has_scene_plan = isinstance(scene_plan, list) and bool(scene_plan)
+        writing_agent = "scene_writer" if has_scene_plan else "scene_planner"
         route = {
-            "writing": "scene_writer",
+            "writing": writing_agent,
             "style_editing": "style_editor",
             "consistency_check": "consistency_checker",
-        }.get(phase, "scene_writer")
+        }.get(phase, writing_agent)
         logger.info("Orchestrator: 第 %s 章 阶段=%s → %s", current, phase, route)
         return route
 

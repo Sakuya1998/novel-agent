@@ -48,10 +48,13 @@ class NovelMemory:
             content: 文本内容(世界观/角色卡/章节正文等)
             metadata: 元数据(如 {"type": "chapter", "number": 3})
         """
+        resolved_id = content_id or str(uuid4())
+        stored_metadata = dict(metadata or {})
+        stored_metadata.setdefault("_memory_id", resolved_id)
         self.vectorstore.add_texts(
             texts=[content],
-            metadatas=[metadata or {}],
-            ids=[content_id or str(uuid4())],
+            metadatas=[stored_metadata],
+            ids=[resolved_id],
         )
 
     def search_similar(
@@ -73,11 +76,27 @@ class NovelMemory:
         results = self.vectorstore.similarity_search_with_score(query, k=k, filter=where)
         return [
             {
+                "id": str((doc.metadata or {}).get("_memory_id", "")),
                 "content": doc.page_content,
                 "metadata": doc.metadata,
                 "distance": float(score),
             }
             for doc, score in results
+        ]
+
+    def list_records(self) -> list[dict]:
+        """返回当前 collection 的轻量记录，用于索引审计与重建校验。"""
+        result = self.vectorstore.get(include=["documents", "metadatas"])
+        ids = result.get("ids") or []
+        documents = result.get("documents") or []
+        metadatas = result.get("metadatas") or []
+        return [
+            {
+                "id": str(ids[index]),
+                "content": str(documents[index] or ""),
+                "metadata": metadatas[index] if index < len(metadatas) else {},
+            }
+            for index in range(len(ids))
         ]
 
     def get_chapter_memory(self, chapter_number: int, k: int = 3) -> list[str]:
@@ -90,6 +109,23 @@ class NovelMemory:
         hits = self.search_similar(query, k=k)
         return [h["content"] for h in hits]
 
+    def store_hierarchical_memory(self, content: str, *, content_hash: str) -> None:
+        """用稳定 ID 更新全书记忆索引，避免每次定稿新增重复向量。"""
+        self.store_content(
+            content,
+            metadata={
+                "type": "hierarchical_memory",
+                "schema_version": "book-memory-v1",
+                "content_hash": content_hash,
+            },
+            content_id=f"{self.novel_id}:hierarchical-memory",
+        )
+
     def clear(self) -> None:
         """清空该小说的全部向量记忆(删除 collection)。"""
         self.vectorstore.delete_collection()
+        self.vectorstore = Chroma(
+            collection_name=f"novel_{self.novel_id}",
+            embedding_function=self.embeddings,
+            persist_directory=self.config.chroma_persist_dir,
+        )

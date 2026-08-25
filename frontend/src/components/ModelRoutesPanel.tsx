@@ -15,10 +15,19 @@ const routeMeta: Array<{ purpose: RoutePurpose; label: string; description: stri
   { purpose: "embedding", label: "嵌入模型", description: "长期记忆的向量检索" },
 ];
 
+function supportsEmbeddings(settings: ModelSettings, provider: string): boolean {
+  return settings.templates[provider]?.supports_embeddings ?? provider !== "anthropic";
+}
+
 function firstTarget(settings: ModelSettings, purpose: RoutePurpose): ModelRoute {
   const current = settings.routes[purpose];
   if (current) return current;
-  const profile = settings.profiles.find((item) => purpose !== "embedding" || item.provider !== "anthropic");
+  const profile = settings.profiles.find((item) => {
+    if (purpose === "embedding") {
+      return supportsEmbeddings(settings, item.provider) && item.embedding_models.length > 0;
+    }
+    return item.chat_models.length > 0;
+  });
   const models = purpose === "embedding" ? profile?.embedding_models : profile?.chat_models;
   return {
     profile_id: profile?.id ?? "",
@@ -89,7 +98,7 @@ export function ModelRoutesPanel({ settings, disabled, busyAction, onSave }: Pro
     </div>
     <div className="model-route-list">
       {routeMeta.map(({ purpose, label, description }) => {
-        const eligibleProfiles = settings.profiles.filter((profile) => purpose !== "embedding" || profile.provider !== "anthropic");
+        const eligibleProfiles = settings.profiles.filter((profile) => purpose !== "embedding" || supportsEmbeddings(settings, profile.provider));
         const selectedProfile = profileMap.get(routes[purpose].profile_id);
         const modelOptions = purpose === "embedding" ? selectedProfile?.embedding_models : selectedProfile?.chat_models;
         const fallbackProfile = profileMap.get(routes[purpose].fallback_profile_id ?? "");

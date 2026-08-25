@@ -106,12 +106,17 @@ export interface MonitoringSummary {
   };
 }
 
-export type ProviderName = "openai" | "anthropic" | "deepseek" | "qwen" | "openai_compatible";
+export type ProviderName = string;
 export type RoutePurpose = "creative" | "analysis" | "embedding";
 
 export interface ProviderTemplate {
   label: string;
+  group: string;
+  protocol: "openai" | "anthropic";
   base_url: string;
+  base_url_mode: "fixed" | "required" | "hidden";
+  api_key_required: boolean;
+  supports_embeddings: boolean;
   chat_models: string[];
   embedding_models: string[];
 }
@@ -150,7 +155,7 @@ export type ModelRoutes = Record<RoutePurpose, ModelRoute>;
 
 export interface ModelSettings {
   source: "database" | "environment" | "unconfigured";
-  templates: Record<ProviderName, ProviderTemplate>;
+  templates: Record<string, ProviderTemplate>;
   profiles: ModelProfile[];
   routes: Partial<ModelRoutes>;
 }
@@ -373,6 +378,11 @@ export interface AuthSession {
   token_type: "bearer";
   expires_at: string;
   user: AuthUser;
+}
+
+export interface AuthStatus {
+  enabled: boolean;
+  user: AuthUser | null;
 }
 
 export interface ConsistencyIssue {

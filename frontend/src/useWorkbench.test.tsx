@@ -1,6 +1,6 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Novel, RunJob, WorkbenchState } from "./types";
+import type { Novel, RunJob, RunJobEventsResponse, WorkbenchState } from "./types";
 
 const api = vi.hoisted(() => ({
   cancelRunJob: vi.fn(),
@@ -36,6 +36,22 @@ const novel: Novel = {
   chapters: [],
 };
 
+const secondNovel: Novel = {
+  ...novel,
+  id: "novel-2",
+  title: "长夜灯塔",
+};
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
 function job(status: RunJob["status"]): RunJob {
   return {
     id: "job-1",
@@ -51,9 +67,9 @@ function job(status: RunJob["status"]): RunJob {
   };
 }
 
-function state(status: WorkbenchState["status"], runJob: RunJob | null): WorkbenchState {
+function state(status: WorkbenchState["status"], runJob: RunJob | null, novelId = novel.id): WorkbenchState {
   return {
-    novel_id: novel.id,
+    novel_id: novelId,
     status,
     current_chapter: 1,
     current_phase: "writing",
@@ -169,5 +185,71 @@ describe("useWorkbench background jobs", () => {
       "强化人物冲突",
     );
     await waitFor(() => expect(result.current.isStreaming).toBe(false));
+  });
+
+  it("ignores a stale project response after the user selects another novel", async () => {
+    const firstDetail = deferred<Novel>();
+    const firstState = deferred<WorkbenchState>();
+    api.listNovels.mockResolvedValue([novel, secondNovel]);
+    api.getNovel.mockImplementation((id: string) => id === novel.id ? firstDetail.promise : Promise.resolve(secondNovel));
+    api.getNovelState.mockImplementation((id: string) => id === novel.id
+      ? firstState.promise
+      : Promise.resolve(state("idle", null, secondNovel.id)));
+
+    const { result } = renderHook(() => useWorkbench());
+    await waitFor(() => expect(api.getNovel).toHaveBeenCalledWith(novel.id));
+
+    act(() => result.current.setSelectedId(secondNovel.id));
+    await waitFor(() => expect(result.current.novel?.id).toBe(secondNovel.id));
+
+    await act(async () => {
+      firstDetail.resolve(novel);
+      firstState.resolve(state("human_review", null));
+      await Promise.resolve();
+    });
+
+    expect(result.current.novel?.id).toBe(secondNovel.id);
+    expect(result.current.state?.novel_id).toBe(secondNovel.id);
+  });
+
+  it("ignores late polling events from a previously selected novel", async () => {
+    const stalePoll = deferred<RunJobEventsResponse>();
+    api.listNovels.mockResolvedValue([novel, secondNovel]);
+    api.getNovel.mockImplementation((id: string) => Promise.resolve(id === novel.id ? novel : secondNovel));
+    api.getNovelState.mockImplementation((id: string) => Promise.resolve(
+      id === novel.id
+        ? state("running", job("running"))
+        : state("idle", null, secondNovel.id),
+    ));
+    api.getRunJobEvents.mockReturnValue(stalePoll.promise);
+
+    const { result } = renderHook(() => useWorkbench());
+    await waitFor(() => expect(api.getRunJobEvents).toHaveBeenCalled());
+
+    act(() => result.current.setSelectedId(secondNovel.id));
+    await waitFor(() => expect(result.current.state?.novel_id).toBe(secondNovel.id));
+
+    await act(async () => {
+      stalePoll.resolve({
+        job: job("waiting_review"),
+        events: [{
+          id: 1,
+          job_id: "job-1",
+          sequence: 1,
+          event_type: "interrupt",
+          payload: {
+            type: "interrupt",
+            node: "human_review",
+            chapter_number: 1,
+            title: "旧作品污染",
+          },
+          created_at: "2026-08-17",
+        }],
+      });
+      await Promise.resolve();
+    });
+
+    expect(result.current.state?.novel_id).toBe(secondNovel.id);
+    expect(result.current.state?.current_draft.title).not.toBe("旧作品污染");
   });
 });

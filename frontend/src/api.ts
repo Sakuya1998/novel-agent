@@ -1,6 +1,7 @@
 import type {
   ConnectionTestResult,
   AuthSession,
+  AuthStatus,
   AuthUser,
   AuditLog,
   CanonDetail,
@@ -37,6 +38,8 @@ import type {
 const API_BASE = import.meta.env.VITE_API_BASE ?? "";
 const AUTH_TOKEN_KEY = "novel_agent_access_token";
 const AUTH_USER_KEY = "novel_agent_auth_user";
+const REQUEST_TIMEOUT_MS = 30_000;
+const READINESS_TIMEOUT_MS = 8_000;
 
 export function getStoredAuthUser(): AuthUser | null {
   if (typeof window === "undefined") return null;
@@ -85,10 +88,33 @@ function responseError(body: unknown, status: number): string {
   return `请求失败 (${status})`;
 }
 
+function isAbortError(reason: unknown): boolean {
+  return reason instanceof DOMException && reason.name === "AbortError";
+}
+
+function isTimeoutError(reason: unknown): boolean {
+  return reason instanceof DOMException && reason.name === "TimeoutError";
+}
+
+function requestSignal(signal?: AbortSignal | null, timeout = REQUEST_TIMEOUT_MS): AbortSignal {
+  const timeoutSignal = AbortSignal.timeout(timeout);
+  return signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
+}
+
+async function fetchApi(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  try {
+    return await fetch(input, init);
+  } catch (reason) {
+    if (isAbortError(reason)) throw reason;
+    if (isTimeoutError(reason)) throw new Error("请求超时，请稍后重试", { cause: reason });
+    throw new Error("无法连接后端服务，请检查网络或服务状态", { cause: reason });
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const token = storedAuthToken();
   const multipart = typeof FormData !== "undefined" && init?.body instanceof FormData;
-  const response = await fetch(`${API_BASE}${path}`, {
+  const response = await fetchApi(`${API_BASE}${path}`, {
     ...init,
     headers: {
       ...(multipart ? {} : { "Content-Type": "application/json" }),
@@ -100,7 +126,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const body = await response.json().catch(() => ({}));
     throw new Error(responseError(body, response.status));
   }
-  return response.json() as Promise<T>;
+  try {
+    return await response.json() as T;
+  } catch (reason) {
+    throw new Error("后端返回了无法解析的数据", { cause: reason });
+  }
 }
 
 export async function exportNovel(
@@ -114,7 +144,8 @@ export async function exportNovel(
   if (metadata.author) query.set("author", metadata.author);
   if (metadata.publisher) query.set("publisher", metadata.publisher);
   if (metadata.language) query.set("language", metadata.language);
-  const response = await fetch(`${API_BASE}/api/novels/${encodeURIComponent(id)}/export?${query.toString()}`, {
+  const response = await fetchApi(`${API_BASE}/api/novels/${encodeURIComponent(id)}/export?${query.toString()}`, {
+    signal: requestSignal(),
     headers: {
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(password ? { "X-Backup-Password": password } : {}),
@@ -127,7 +158,8 @@ export async function exportNovel(
   if (response.status === 202) {
     const payload = await response.json() as { job: TransferJob };
     const completed = await waitForTransfer(payload.job.id);
-    const download = await fetch(`${API_BASE}/api/transfers/${encodeURIComponent(completed.id)}/download`, {
+    const download = await fetchApi(`${API_BASE}/api/transfers/${encodeURIComponent(completed.id)}/download`, {
+      signal: requestSignal(),
       headers: token ? { Authorization: `Bearer ${token}` } : undefined,
     });
     if (!download.ok) {
@@ -192,6 +224,18 @@ export async function loginAuth(identifier: string, password: string): Promise<A
   return storeAuthSession(session);
 }
 
+export async function getAuthStatus(): Promise<AuthStatus> {
+  const status = await request<AuthStatus>("/api/auth/status");
+  if (typeof window !== "undefined") {
+    if (status.enabled && status.user) {
+      window.localStorage.setItem(AUTH_USER_KEY, JSON.stringify(status.user));
+    } else {
+      clearStoredAuth();
+    }
+  }
+  return status;
+}
+
 export async function registerAuth(payload: {
   username: string;
   email: string;
@@ -214,8 +258,19 @@ export async function logoutAuth(): Promise<void> {
   }
 }
 
-export function getReadiness(): Promise<ReadinessReport> {
-  return request<ReadinessReport>("/readyz");
+export async function getReadiness(): Promise<ReadinessReport> {
+  const response = await fetchApi(`${API_BASE}/readyz`, { signal: requestSignal(undefined, READINESS_TIMEOUT_MS) });
+  const body = await response.json().catch(() => ({}));
+  const validReport = Boolean(
+    body && typeof body === "object"
+    && "status" in body
+    && ((body as { status?: unknown }).status === "ready" || (body as { status?: unknown }).status === "not_ready")
+    && "checks" in body
+    && typeof (body as { checks?: unknown }).checks === "object",
+  );
+  if ((response.ok || response.status === 503) && validReport) return body as ReadinessReport;
+  if (response.ok || response.status === 503) throw new Error("就绪检查返回了无效数据");
+  throw new Error(responseError(body, response.status));
 }
 
 export function listAuditLogs(limit = 50, action = ""): Promise<{ logs: AuditLog[] }> {
@@ -527,7 +582,15 @@ async function streamRequest(
   init: RequestInit,
   onEvent: (event: StreamEvent) => void,
 ): Promise<void> {
-  const response = await fetch(`${API_BASE}${path}`, init);
+  const token = storedAuthToken();
+  const response = await fetchApi(`${API_BASE}${path}`, {
+    ...init,
+    signal: requestSignal(init?.signal),
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(init.headers ?? {}),
+    },
+  });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     throw new Error(responseError(body, response.status));

@@ -1,6 +1,7 @@
 import { LogIn, LogOut, UserPlus, X } from "lucide-react";
 import { useState } from "react";
 import type { AuthSession, AuthUser } from "../types";
+import { useDialogLifecycle } from "../useDialogLifecycle";
 
 interface Props {
   open: boolean;
@@ -21,6 +22,7 @@ export function AuthDialog({ open, currentUser, onLogin, onRegister, onLogout, o
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const { dialogRef, onBackdropMouseDown } = useDialogLifecycle<HTMLElement>(open, onClose, busy);
 
   async function submit() {
     setBusy(true);
@@ -44,11 +46,23 @@ export function AuthDialog({ open, currentUser, onLogin, onRegister, onLogout, o
     }
   }
 
+  async function logout() {
+    setBusy(true);
+    setError("");
+    try {
+      await onLogout();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "退出登录失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   if (!open) return null;
-  return <div className="model-settings-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-    <section className="model-settings-dialog auth-dialog" role="dialog" aria-modal="true" aria-labelledby="auth-title">
-      <header className="model-settings-header"><div><span className="eyebrow">WORKSPACE ACCESS</span><h2 id="auth-title">工作区身份</h2></div><button type="button" className="dialog-close-button" aria-label="关闭身份窗口" title="关闭" onClick={onClose}><X size={18} /></button></header>
-      {currentUser ? <div className="auth-current"><div><span>{currentUser.display_name || currentUser.username}</span><strong>{currentUser.tenant_name}</strong><small>{currentUser.role} · {currentUser.username}</small></div><button type="button" className="secondary-button" onClick={() => void onLogout()}><LogOut size={14} />退出登录</button></div> : <>
+  return <div className="model-settings-backdrop" onMouseDown={onBackdropMouseDown}>
+    <section ref={dialogRef} tabIndex={-1} className="model-settings-dialog auth-dialog" role="dialog" aria-modal="true" aria-labelledby="auth-title">
+      <header className="model-settings-header"><div><span className="eyebrow">WORKSPACE ACCESS</span><h2 id="auth-title">工作区身份</h2></div><button type="button" className="dialog-close-button" aria-label="关闭身份窗口" title="关闭" disabled={busy} onClick={onClose}><X size={18} /></button></header>
+      {currentUser ? <div className="auth-current"><div><span>{currentUser.display_name || currentUser.username}</span><strong>{currentUser.tenant_name}</strong><small>{currentUser.role} · {currentUser.username}</small></div><button type="button" className="secondary-button" disabled={busy} onClick={() => void logout()}><LogOut size={14} />{busy ? "退出中" : "退出登录"}</button>{error && <p className="auth-error" role="alert">{error}</p>}</div> : <>
         <div className="auth-tabs"><button type="button" className={mode === "login" ? "active" : ""} onClick={() => setMode("login")}><LogIn size={14} />登录</button><button type="button" className={mode === "register" ? "active" : ""} onClick={() => setMode("register")}><UserPlus size={14} />注册工作区</button></div>
         <form className="auth-form" onSubmit={(event) => { event.preventDefault(); void submit(); }}>
           {mode === "login" ? <label>用户名或邮箱<input aria-label="用户名或邮箱" autoComplete="username" value={identifier} onChange={(event) => setIdentifier(event.target.value)} required /></label> : <>
@@ -58,7 +72,7 @@ export function AuthDialog({ open, currentUser, onLogin, onRegister, onLogout, o
             <label>工作区名称<input aria-label="工作区名称" value={tenantName} onChange={(event) => setTenantName(event.target.value)} required /></label>
           </>}
           <label>密码<input aria-label="密码" type="password" autoComplete={mode === "login" ? "current-password" : "new-password"} minLength={mode === "register" ? 8 : 1} value={password} onChange={(event) => setPassword(event.target.value)} required /></label>
-          {error && <p className="auth-error">{error}</p>}
+          {error && <p className="auth-error" role="alert" aria-live="assertive">{error}</p>}
           <button type="submit" className="primary-button" aria-label={mode === "login" ? "提交登录" : "提交注册"} disabled={busy}>{mode === "login" ? <LogIn size={14} /> : <UserPlus size={14} />}{busy ? "提交中" : mode === "login" ? "登录" : "创建工作区"}</button>
         </form>
       </>}

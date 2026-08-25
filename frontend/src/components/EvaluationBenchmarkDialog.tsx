@@ -1,6 +1,7 @@
 import { AlertTriangle, CheckCircle2, FlaskConical, LoaderCircle, Play, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { EvaluationBenchmarkRun } from "../types";
+import { useDialogLifecycle } from "../useDialogLifecycle";
 
 interface Props {
   open: boolean;
@@ -15,6 +16,7 @@ export function EvaluationBenchmarkDialog({ open, runs, onRun, onClose }: Props)
   const [selectedId, setSelectedId] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const { dialogRef, onBackdropMouseDown } = useDialogLifecycle<HTMLElement>(open, onClose, loading);
   const selected = useMemo(
     () => runs.find((run) => run.id === selectedId) ?? runs[0],
     [runs, selectedId],
@@ -34,18 +36,18 @@ export function EvaluationBenchmarkDialog({ open, runs, onRun, onClose }: Props)
   }
 
   if (!open) return null;
-  return <div className="model-settings-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-    <section className="model-settings-dialog evaluation-benchmark-dialog" role="dialog" aria-modal="true" aria-labelledby="evaluation-benchmark-title">
+  return <div className="model-settings-backdrop" onMouseDown={onBackdropMouseDown}>
+    <section ref={dialogRef} tabIndex={-1} className="model-settings-dialog evaluation-benchmark-dialog" role="dialog" aria-modal="true" aria-labelledby="evaluation-benchmark-title">
       <header className="model-settings-header">
         <div><span className="eyebrow">REGRESSION EVALS</span><h2 id="evaluation-benchmark-title">质量评测基准</h2></div>
-        <button className="dialog-close-button" type="button" title="关闭" aria-label="关闭质量评测基准" onClick={onClose}><X size={18} /></button>
+        <button className="dialog-close-button" type="button" title="关闭" aria-label="关闭质量评测基准" disabled={loading} onClick={onClose}><X size={18} /></button>
       </header>
       <div className="evaluation-benchmark-toolbar">
         <label className="benchmark-toggle"><input type="checkbox" checked={includeJudge} onChange={(event) => setIncludeJudge(event.target.checked)} disabled={loading} /><span>启用模型评审</span></label>
         <label>比较基准<select aria-label="选择评测基准" value={baselineRunId} onChange={(event) => setBaselineRunId(event.target.value)} disabled={loading}><option value="">仅执行绝对门禁</option>{runs.map((run) => <option value={run.id} key={run.id}>{run.created_at.slice(0, 19).replace("T", " ")} · {run.overall_score.toFixed(1)}</option>)}</select></label>
         <button type="button" className="primary-button" onClick={() => void execute()} disabled={loading}>{loading ? <LoaderCircle className="spin" size={14} /> : <Play size={14} />}运行评测</button>
       </div>
-      {error && <div className="model-trace-error"><AlertTriangle size={14} />{error}</div>}
+      {error && <div className="model-trace-error" role="alert"><AlertTriangle size={14} />{error}</div>}
       <div className="evaluation-benchmark-layout">
         <aside className="evaluation-run-list">
           {runs.map((run) => <button type="button" className={run.id === selected?.id ? "active" : ""} key={run.id} onClick={() => setSelectedId(run.id)}><span className={run.status}>{run.status === "passed" ? <CheckCircle2 size={13} /> : <AlertTriangle size={13} />}{run.overall_score.toFixed(1)}</span><small>{run.created_at.slice(0, 19).replace("T", " ")}</small></button>)}

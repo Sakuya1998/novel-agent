@@ -172,6 +172,7 @@ def _parse_backup(data: bytes) -> dict[str, Any]:
         for name in chapter_names:
             chapters.append(json.loads(archive.read(name)))
     return {
+        "source_kind": "backup",
         "novel": novel,
         "chapters": chapters,
         "progress": progress,
@@ -221,6 +222,7 @@ def parse_import_bytes(
         text = data.decode("utf-8-sig", errors="replace")
         title, chapters = _split_chapters(text, fallback)
     return {
+        "source_kind": "publication",
         "novel": {
             "title": title,
             "genre": "",

@@ -97,6 +97,10 @@ export function useWorkbench() {
   const selectedIdRef = useRef<string | undefined>(undefined);
   selectedIdRef.current = selectedId;
 
+  const updateStateFor = useCallback((id: string, update: (current: WorkbenchState) => WorkbenchState) => {
+    setState((current) => current?.novel_id === id ? update(current) : current);
+  }, []);
+
   const refreshList = useCallback(async () => {
     const items = await listNovels();
     setNovels(items);
@@ -111,6 +115,7 @@ export function useWorkbench() {
         ? listCreativeBriefVersions(id)
         : Promise.resolve([] as CreativeBriefVersion[]),
     ]);
+    if (selectedIdRef.current !== id) return;
     setNovel(detail);
     setState({ ...summary, conflicts: summary.conflicts ?? [] });
     setCreativeBriefVersions(versions);
@@ -145,13 +150,18 @@ export function useWorkbench() {
     }
     setError("");
     setLastNode(undefined);
-    refreshSelected(selectedId).catch((err: unknown) => setError(err instanceof Error ? err.message : "无法加载作品状态"));
+    refreshSelected(selectedId).catch((err: unknown) => {
+      if (selectedIdRef.current === selectedId) {
+        setError(err instanceof Error ? err.message : "无法加载作品状态");
+      }
+    });
   }, [refreshSelected, selectedId]);
 
   const loadModelTraces = useCallback(async (agent = "") => {
     if (!selectedId) return [];
-    const traces = await listModelTraces(selectedId, 100, agent);
-    setModelTraces(traces);
+    const id = selectedId;
+    const traces = await listModelTraces(id, 100, agent);
+    if (selectedIdRef.current === id) setModelTraces(traces);
     return traces;
   }, [selectedId]);
 
@@ -204,31 +214,31 @@ export function useWorkbench() {
     return result;
   }, [refreshList]);
 
-  const handleEvent = useCallback((event: StreamEvent) => {
-    if (event.type === "node_done") setLastNode(event.node);
+  const handleEvent = useCallback((id: string, event: StreamEvent) => {
+    if (event.type === "node_done" && selectedIdRef.current === id) setLastNode(event.node);
     if (event.type === "interrupt") {
       if (event.node === "blueprint_review") {
-        setState((current) => current ? {
+        updateStateFor(id, (current) => ({
           ...current,
           status: "blueprint_review",
           review_node: event.node,
           world_bible: event.world_bible,
           characters: event.characters,
           outline: event.outline,
-        } : current);
+        }));
         return;
       }
       if (event.node === "scene_review") {
-        setState((current) => current ? {
+        updateStateFor(id, (current) => ({
           ...current,
           status: "scene_review",
           review_node: event.node,
           chapter_plan: event.chapter_plan ?? current.chapter_plan ?? {},
           scene_plan: event.scene_plan,
-        } : current);
+        }));
         return;
       }
-      setState((current) => current ? {
+      updateStateFor(id, (current) => ({
         ...current,
         status: "human_review",
         current_draft: {
@@ -240,17 +250,17 @@ export function useWorkbench() {
         },
         issues: event.issues ?? current.issues,
         persistence_error: event.persistence_error ?? current.persistence_error,
-      } : current);
+      }));
     }
-    if (event.type === "error") setError(event.message);
+    if (event.type === "error" && selectedIdRef.current === id) setError(event.message);
     if (event.type === "end") {
-      setState((current) => current ? {
+      updateStateFor(id, (current) => ({
         ...current,
         chapters_done: event.chapters_done,
         current_chapter: event.current_chapter ?? current.current_chapter,
-      } : current);
+      }));
     }
-  }, []);
+  }, [updateStateFor]);
 
   const pollRunJob = useCallback(async (id: string, jobId: string) => {
     if (pollingJobRef.current === jobId) return;
@@ -277,7 +287,7 @@ export function useWorkbench() {
         }
         for (const record of result.events) {
           sequence = Math.max(sequence, record.sequence);
-          handleEvent(record.payload);
+          handleEvent(id, record.payload);
         }
         setState((current) => current?.novel_id === id ? {
           ...current,
@@ -297,7 +307,9 @@ export function useWorkbench() {
       }
     } catch (reason) {
       if (!(reason instanceof DOMException && reason.name === "AbortError")) {
-        setError(reason instanceof Error ? reason.message : "后台任务状态读取失败");
+        if (selectedIdRef.current === id) {
+          setError(reason instanceof Error ? reason.message : "后台任务状态读取失败");
+        }
         if (selectedIdRef.current === id) await refreshSelected(id).catch(() => undefined);
       }
     } finally {
@@ -321,71 +333,90 @@ export function useWorkbench() {
     setError("");
     try {
       const job = await startNovelJob(id, "run");
-      setState((current) => ({
-        ...(current ?? emptyState(id)),
+      if (selectedIdRef.current !== id) return;
+      updateStateFor(id, (current) => ({
+        ...current,
         status: "running",
         run_job: job,
       }));
       void pollRunJob(id, job.id);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "创作运行失败");
-      await refreshSelected(id).catch(() => undefined);
+      if (selectedIdRef.current === id) {
+        setError(err instanceof Error ? err.message : "创作运行失败");
+        await refreshSelected(id).catch(() => undefined);
+      }
     }
-  }, [pollRunJob, refreshSelected, selectedId]);
+  }, [pollRunJob, refreshSelected, selectedId, updateStateFor]);
 
   const resume = useCallback(async (review: ReviewSubmission | PlanningReviewSubmission) => {
     if (!selectedId) return;
+    const id = selectedId;
     setError("");
     try {
-      const job = await startNovelJob(selectedId, "resume", review);
-      setState((current) => current ? { ...current, status: "running", run_job: job } : current);
-      void pollRunJob(selectedId, job.id);
+      const job = await startNovelJob(id, "resume", review);
+      if (selectedIdRef.current !== id) return;
+      updateStateFor(id, (current) => ({ ...current, status: "running", run_job: job }));
+      void pollRunJob(id, job.id);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "恢复创作失败");
-      await refreshSelected(selectedId).catch(() => undefined);
+      if (selectedIdRef.current === id) {
+        setError(err instanceof Error ? err.message : "恢复创作失败");
+        await refreshSelected(id).catch(() => undefined);
+      }
     }
-  }, [pollRunJob, refreshSelected, selectedId]);
+  }, [pollRunJob, refreshSelected, selectedId, updateStateFor]);
 
   const cancelJob = useCallback(async () => {
     const job = state?.run_job;
-    if (!job || !ACTIVE_JOB_STATUSES.has(job.status)) return;
+    const id = selectedId;
+    if (!id || !job || !ACTIVE_JOB_STATUSES.has(job.status)) return;
     setError("");
     try {
       const cancelled = await cancelRunJob(job.id);
-      setState((current) => current ? { ...current, run_job: cancelled } : current);
-      if (selectedId) await refreshSelected(selectedId);
+      if (selectedIdRef.current !== id) return;
+      updateStateFor(id, (current) => ({ ...current, run_job: cancelled }));
+      await refreshSelected(id);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "停止后台任务失败");
+      if (selectedIdRef.current === id) {
+        setError(err instanceof Error ? err.message : "停止后台任务失败");
+      }
     }
-  }, [refreshSelected, selectedId, state?.run_job]);
+  }, [refreshSelected, selectedId, state?.run_job, updateStateFor]);
 
   const startBookRevision = useCallback(async (chapterNumber: number, feedback: string) => {
     if (!selectedId) return;
+    const id = selectedId;
     setError("");
     try {
-      const job = await startBookRevisionJob(selectedId, chapterNumber, feedback);
-      setState((current) => current ? { ...current, status: "running", run_job: job } : current);
-      void pollRunJob(selectedId, job.id);
+      const job = await startBookRevisionJob(id, chapterNumber, feedback);
+      if (selectedIdRef.current !== id) return;
+      updateStateFor(id, (current) => ({ ...current, status: "running", run_job: job }));
+      void pollRunJob(id, job.id);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "启动全书返修失败");
-      await refreshSelected(selectedId).catch(() => undefined);
+      if (selectedIdRef.current === id) {
+        setError(err instanceof Error ? err.message : "启动全书返修失败");
+        await refreshSelected(id).catch(() => undefined);
+      }
       throw err;
     }
-  }, [pollRunJob, refreshSelected, selectedId]);
+  }, [pollRunJob, refreshSelected, selectedId, updateStateFor]);
 
   const generateCandidates = useCallback(async (count: number, instruction: string) => {
     if (!selectedId) return;
+    const id = selectedId;
     setError("");
     try {
-      const job = await startCandidateGenerationJob(selectedId, count, instruction);
-      setState((current) => current ? { ...current, status: "running", run_job: job } : current);
-      void pollRunJob(selectedId, job.id);
+      const job = await startCandidateGenerationJob(id, count, instruction);
+      if (selectedIdRef.current !== id) return;
+      updateStateFor(id, (current) => ({ ...current, status: "running", run_job: job }));
+      void pollRunJob(id, job.id);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "候选稿生成失败");
-      await refreshSelected(selectedId).catch(() => undefined);
+      if (selectedIdRef.current === id) {
+        setError(err instanceof Error ? err.message : "候选稿生成失败");
+        await refreshSelected(id).catch(() => undefined);
+      }
       throw err;
     }
-  }, [pollRunJob, refreshSelected, selectedId]);
+  }, [pollRunJob, refreshSelected, selectedId, updateStateFor]);
 
   const compareVersions = useCallback(async (fromVersion: number, toVersion: number) => {
     if (!selectedId || !state) return "";
@@ -428,20 +459,22 @@ export function useWorkbench() {
 
   const evaluateVersion = useCallback(async (versionNumber: number, includeJudge: boolean) => {
     if (!selectedId || !state) throw new Error("尚未选择章节");
-    const evaluation = await evaluateChapterVersion(selectedId, state.current_chapter, versionNumber, includeJudge);
-    setState((current) => current ? { ...current, evaluations: [evaluation, ...current.evaluations] } : current);
+    const id = selectedId;
+    const evaluation = await evaluateChapterVersion(id, state.current_chapter, versionNumber, includeJudge);
+    updateStateFor(id, (current) => ({ ...current, evaluations: [evaluation, ...current.evaluations] }));
     return evaluation;
-  }, [selectedId, state]);
+  }, [selectedId, state, updateStateFor]);
 
   const setEvaluationBaseline = useCallback(async (evaluationId: number) => {
     if (!selectedId || !state) throw new Error("尚未选择章节");
-    const evaluation = await setChapterEvaluationBaseline(selectedId, state.current_chapter, evaluationId);
-    setState((current) => current ? {
+    const id = selectedId;
+    const evaluation = await setChapterEvaluationBaseline(id, state.current_chapter, evaluationId);
+    updateStateFor(id, (current) => ({
       ...current,
       evaluations: current.evaluations.map((item) => ({ ...item, is_baseline: item.id === evaluation.id })),
-    } : current);
+    }));
     return evaluation;
-  }, [selectedId, state]);
+  }, [selectedId, state, updateStateFor]);
 
   const compareEvaluations = useCallback(async (fromVersion: number, toVersion: number) => {
     if (!selectedId || !state) throw new Error("尚未选择章节");
@@ -450,56 +483,67 @@ export function useWorkbench() {
 
   const updateCanon = useCallback(async (operation: CanonOperation) => {
     if (!selectedId) return;
+    const id = selectedId;
     setError("");
     try {
-      const job = await startCanonJob(selectedId, operation);
-      setState((current) => current ? { ...current, status: "running", run_job: job } : current);
-      void pollRunJob(selectedId, job.id);
+      const job = await startCanonJob(id, operation);
+      if (selectedIdRef.current !== id) return;
+      updateStateFor(id, (current) => ({ ...current, status: "running", run_job: job }));
+      void pollRunJob(id, job.id);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Canon 更新失败");
-      await refreshSelected(selectedId).catch(() => undefined);
+      if (selectedIdRef.current === id) {
+        setError(err instanceof Error ? err.message : "Canon 更新失败");
+        await refreshSelected(id).catch(() => undefined);
+      }
       throw err;
     }
-  }, [pollRunJob, refreshSelected, selectedId]);
+  }, [pollRunJob, refreshSelected, selectedId, updateStateFor]);
 
   const updateBrief = useCallback(async (
     brief: CreativeBrief,
     changeSummary: string,
   ) => {
     if (!selectedId) throw new Error("尚未选择作品");
+    const id = selectedId;
     setError("");
     try {
       const result = await updateCreativeBrief(
-        selectedId,
+        id,
         brief,
         novel?.creative_brief_version,
         changeSummary,
       );
+      if (selectedIdRef.current !== id) return result;
       setNovel(result);
       if (typeof listCreativeBriefVersions === "function") {
-        setCreativeBriefVersions(await listCreativeBriefVersions(selectedId));
+        const versions = await listCreativeBriefVersions(id);
+        if (selectedIdRef.current !== id) return result;
+        setCreativeBriefVersions(versions);
       }
       if (result.requires_revalidation) {
-        const job = await startNovelJob(selectedId, "resume", { feedback: "recheck" });
-        setState((current) => current ? {
+        const job = await startNovelJob(id, "resume", { feedback: "recheck" });
+        if (selectedIdRef.current !== id) return result;
+        updateStateFor(id, (current) => ({
           ...current,
           status: "running",
           run_job: job,
           creative_brief: result.creative_brief,
           creative_brief_version: result.creative_brief_version,
           creative_brief_review_required: true,
-        } : current);
-        void pollRunJob(selectedId, job.id);
+        }));
+        void pollRunJob(id, job.id);
       } else {
-        await refreshSelected(selectedId);
+        await refreshSelected(id);
       }
       return result;
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "保存创作约束失败");
-      await refreshSelected(selectedId).catch(() => undefined);
+      if (selectedIdRef.current === id) {
+        setError(err instanceof Error ? err.message : "保存创作约束失败");
+        await refreshSelected(id).catch(() => undefined);
+      }
       throw err;
     }
-  }, [novel?.creative_brief_version, pollRunJob, refreshSelected, selectedId]);
+  }, [novel?.creative_brief_version, pollRunJob, refreshSelected, selectedId, updateStateFor]);
 
   const addNovel = useCallback(async (payload: CreateNovelPayload) => {
     setError("");

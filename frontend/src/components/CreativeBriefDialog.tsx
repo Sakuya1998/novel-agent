@@ -9,6 +9,7 @@ import {
   POINT_OF_VIEW_LABELS,
 } from "../creativeBrief";
 import type { CreativeBrief, CreativeBriefVersion } from "../types";
+import { useDialogLifecycle } from "../useDialogLifecycle";
 
 interface Props {
   open: boolean;
@@ -35,6 +36,8 @@ export function CreativeBriefDialog({ open, brief, version, versions, disabled, 
   const [avoidContent, setAvoidContent] = useState("");
   const [changeSummary, setChangeSummary] = useState("");
   const [saving, setSaving] = useState(false);
+  const busy = disabled || saving;
+  const { dialogRef, onBackdropMouseDown } = useDialogLifecycle<HTMLElement>(open, onClose, busy);
 
   useEffect(() => {
     if (!open) return;
@@ -80,9 +83,8 @@ export function CreativeBriefDialog({ open, brief, version, versions, disabled, 
   }
 
   if (!open) return null;
-  const busy = disabled || saving;
-  return <div className="model-settings-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-    <section className="model-settings-dialog creative-brief-dialog" role="dialog" aria-modal="true" aria-labelledby="creative-brief-title">
+  return <div className="model-settings-backdrop" onMouseDown={onBackdropMouseDown}>
+    <section ref={dialogRef} tabIndex={-1} className="model-settings-dialog creative-brief-dialog" role="dialog" aria-modal="true" aria-labelledby="creative-brief-title">
       <header className="model-settings-header">
         <div><span className="eyebrow">CREATIVE BRIEF</span><h2 id="creative-brief-title">创作约束</h2></div>
         <div className="model-settings-header-actions"><span className="model-source-badge database">版本 v{version ?? 1}</span><button className="dialog-close-button" type="button" title="关闭" aria-label="关闭创作约束" onClick={onClose}><X size={18} /></button></div>

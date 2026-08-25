@@ -296,7 +296,7 @@ def _observe_request(metrics: dict[str, object] | None, started: float, status_c
 @app.middleware("http")
 async def authenticate_request(request: Request, call_next):
     path = request.url.path
-    public = path in {"/healthz", "/api/auth/register", "/api/auth/login"}
+    public = path in {"/healthz", "/api/auth/status", "/api/auth/register", "/api/auth/login"}
     started = time.perf_counter()
     metrics = getattr(app.state, "metrics", None)
     if isinstance(metrics, dict):
@@ -572,6 +572,13 @@ def _auth_response(user: dict, token: str, expires_at: str) -> dict:
     }
 
 
+@app.get("/api/auth/status")
+async def get_auth_status(request: Request) -> dict:
+    principal = getattr(request.state, "principal", None)
+    user = store.get_user(principal.user_id) if principal is not None else None
+    return {"enabled": cfg.auth_enabled, "user": user}
+
+
 @app.post("/api/auth/register", status_code=201)
 async def register_auth_user(req: AuthRegisterRequest, request: Request) -> dict:
     retry_after = _check_auth_rate_limit(request, req.username, scope="register")
@@ -778,13 +785,14 @@ async def _persist_imported_payload(
             "status": "final",
         })
     chapters.sort(key=lambda item: item["chapter_number"])
-    if not chapters:
+    is_backup = parsed.get("source_kind") == "backup"
+    if not chapters and not is_backup:
         raise HTTPException(422, "导入文件没有可用章节")
     novel_id = f"novel_{uuid4().hex[:12]}"
-    last_chapter = max(int(item["chapter_number"]) for item in chapters)
+    last_chapter = max((int(item["chapter_number"]) for item in chapters), default=0)
     total_chapters = max(int(source_novel.get("total_chapters", 0) or 0), last_chapter, 1)
-    default_next_chapter = last_chapter + 1
-    default_phase = "completed" if last_chapter >= total_chapters else "writing"
+    default_next_chapter = max(last_chapter + 1, 1)
+    default_phase = "idle" if not chapters else "completed" if last_chapter >= total_chapters else "writing"
     created = store.create_novel(
         novel_id=novel_id,
         title=(title.strip() or str(source_novel.get("title", "导入作品")))[:100],
@@ -825,7 +833,11 @@ async def _persist_imported_payload(
         else:
             state.setdefault("current_chapter", default_next_chapter)
             state.setdefault("current_phase", default_phase)
-        store.save_progress(novel_id, int(state["current_chapter"]), str(state["current_phase"]), state)
+        has_restorable_state = bool(source_state) or bool(
+            isinstance(checkpoint, dict) and checkpoint.get("next")
+        )
+        if chapters or has_restorable_state:
+            store.save_progress(novel_id, int(state["current_chapter"]), str(state["current_phase"]), state)
         for snapshot in parsed.get("memory_snapshots") or []:
             if isinstance(snapshot, dict) and isinstance(snapshot.get("payload"), dict):
                 store.save_memory_snapshot(
@@ -842,7 +854,8 @@ async def _persist_imported_payload(
                     index_hash=str(run.get("index_hash", "")),
                     report=run["report"],
                 )
-        await _restore_imported_checkpoint(novel_id, state, checkpoint)
+        if chapters or has_restorable_state:
+            await _restore_imported_checkpoint(novel_id, state, checkpoint)
         records = build_memory_records(
             novel_id=novel_id,
             world_bible=str(state.get("world_bible", "")),

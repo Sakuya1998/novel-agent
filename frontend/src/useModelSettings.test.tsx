@@ -97,4 +97,30 @@ describe("useModelSettings", () => {
     expect(result.current.error).toBe("refresh failed");
     expect(result.current.notice).toBe("模型服务已保存，但刷新失败，请重新打开模型设置");
   });
+
+  it("clears stale notices when the dialog closes and reopens", async () => {
+    apiMocks.getModelSettings.mockResolvedValue(emptySettings);
+    apiMocks.createModelProfile.mockResolvedValue(savedProfile);
+    const { result, rerender } = renderHook(({ open }) => useModelSettings(open), {
+      initialProps: { open: true },
+    });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    await act(() => result.current.saveProfile({
+      name: "OpenAI",
+      provider: "openai",
+      base_url: "https://api.openai.com/v1",
+      api_key: "sk-test",
+      clear_api_key: false,
+      chat_models: ["gpt-4o"],
+      embedding_models: ["text-embedding-3-small"],
+    }));
+    expect(result.current.notice).toBe("模型服务已保存");
+
+    rerender({ open: false });
+    expect(result.current.notice).toBe("");
+    rerender({ open: true });
+    await waitFor(() => expect(apiMocks.getModelSettings).toHaveBeenCalledTimes(3));
+    expect(result.current.notice).toBe("");
+  });
 });

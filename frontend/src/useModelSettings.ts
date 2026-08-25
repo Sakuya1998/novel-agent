@@ -28,6 +28,7 @@ export function useModelSettings(open: boolean) {
   const reload = useCallback(async (): Promise<boolean> => {
     setIsLoading(true);
     setError("");
+    setNotice("");
     try {
       setSettings(await getModelSettings());
       return true;
@@ -40,7 +41,13 @@ export function useModelSettings(open: boolean) {
   }, []);
 
   useEffect(() => {
-    if (open) void reload();
+    if (!open) {
+      setError("");
+      setNotice("");
+      return;
+    }
+    setSettings(undefined);
+    void reload();
   }, [open, reload]);
 
   const mutate = useCallback(async <T,>(

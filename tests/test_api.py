@@ -74,6 +74,31 @@ async def test_healthz(api_env):
         assert (await c.get("/healthz")).json() == {"status": "ok"}
 
 
+async def test_auth_status_reflects_local_and_authenticated_modes(api_env):
+    from httpx import ASGITransport, AsyncClient
+
+    async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
+        local = (await c.get("/api/auth/status")).json()
+        assert local["enabled"] is False
+        assert local["user"]["tenant_id"] == "tenant_local"
+
+        api_env.cfg.auth_enabled = True
+        anonymous = (await c.get("/api/auth/status")).json()
+        assert anonymous == {"enabled": True, "user": None}
+
+        registered = (await c.post("/api/auth/register", json={
+            "username": "status_owner",
+            "password": "status-password",
+            "tenant_name": "状态工作区",
+        })).json()
+        authenticated = (await c.get(
+            "/api/auth/status",
+            headers={"Authorization": f"Bearer {registered['access_token']}"},
+        )).json()
+        assert authenticated["enabled"] is True
+        assert authenticated["user"]["username"] == "status_owner"
+
+
 def test_production_config_rejects_anonymous_mode():
     from config import Config
 
@@ -522,6 +547,36 @@ async def test_large_transfer_import_and_export_use_persistent_jobs(api_env, mon
     assert downloaded.content.startswith(b"PK")
     assert "parse_import_bytes" in threaded_calls
     assert "export_novel_bytes" in threaded_calls
+
+
+async def test_empty_backup_roundtrip_restores_an_idle_novel(api_env):
+    from httpx import ASGITransport, AsyncClient
+
+    async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
+        created = (await c.post("/api/novels", json={
+            "title": "尚未开写",
+            "genre": "悬疑",
+            "inspiration": "只有创作设定，尚无正文",
+            "total_chapters": 8,
+            "style": "gu_long",
+        })).json()
+        exported = await c.get(
+            f"/api/novels/{created['id']}/export",
+            params={"format": "backup"},
+        )
+        imported = await c.post(
+            "/api/novels/import",
+            files={"file": ("empty.novel-backup.zip", exported.content, "application/zip")},
+        )
+
+        assert imported.status_code == 200, imported.text
+        payload = imported.json()
+        assert payload["novel"]["title"] == "尚未开写"
+        assert payload["imported_chapters"] == 0
+        restored_state = await c.get(f"/api/novels/{payload['novel']['id']}/state")
+
+    assert restored_state.status_code == 200
+    assert restored_state.json()["status"] == "idle"
 
 
 

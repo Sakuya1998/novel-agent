@@ -1,4 +1,4 @@
-import { BookOpen, LoaderCircle, Plus, SlidersHorizontal, Sparkles, Trash2 } from "lucide-react";
+import { BookOpen, LoaderCircle, Plus, SlidersHorizontal, Sparkles, Trash2, X } from "lucide-react";
 import type { FormEvent } from "react";
 import { useState } from "react";
 import type { CreateNovelPayload } from "../api";
@@ -11,6 +11,8 @@ import {
   POINT_OF_VIEW_LABELS,
 } from "../creativeBrief";
 import type { CreativeBrief, Novel } from "../types";
+import { useDialogLifecycle } from "../useDialogLifecycle";
+import type { ServiceStatus } from "../useServiceStatus";
 
 interface Props {
   novels: Novel[];
@@ -18,6 +20,7 @@ interface Props {
   isLoading: boolean;
   isStreaming: boolean;
   deletingId?: string;
+  serviceStatus?: ServiceStatus;
   onSelect: (id: string) => void;
   onCreate: (payload: CreateNovelPayload) => Promise<void>;
   onDelete: (novel: Novel) => Promise<void>;
@@ -31,9 +34,10 @@ function splitBriefList(value: string, limit: number): string[] {
     .slice(0, limit);
 }
 
-export function NovelSidebar({ novels, selectedId, isLoading, isStreaming, deletingId, onSelect, onCreate, onDelete }: Props) {
+export function NovelSidebar({ novels, selectedId, isLoading, isStreaming, deletingId, serviceStatus = "checking", onSelect, onCreate, onDelete }: Props) {
   const [isCreating, setIsCreating] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [createError, setCreateError] = useState("");
   const [title, setTitle] = useState("");
   const [genre, setGenre] = useState("武侠");
   const [inspiration, setInspiration] = useState("");
@@ -44,6 +48,17 @@ export function NovelSidebar({ novels, selectedId, isLoading, isStreaming, delet
   const [themes, setThemes] = useState("");
   const [mustInclude, setMustInclude] = useState("");
   const [avoidContent, setAvoidContent] = useState("");
+  const { dialogRef, onBackdropMouseDown } = useDialogLifecycle<HTMLFormElement>(
+    isCreating,
+    () => { setIsCreating(false); setCreateError(""); },
+    isSubmitting,
+  );
+  const serviceLabels: Record<ServiceStatus, string> = {
+    checking: "正在检查后端",
+    ready: "后端服务已连接",
+    degraded: "后端服务需要关注",
+    offline: "后端服务未连接",
+  };
 
   function updateBrief<K extends keyof CreativeBrief>(field: K, value: CreativeBrief[K]) {
     setCreativeBrief((current) => ({ ...current, [field]: value }));
@@ -60,6 +75,7 @@ export function NovelSidebar({ novels, selectedId, isLoading, isStreaming, delet
     event.preventDefault();
     if (!title.trim() || !inspiration.trim()) return;
     setIsSubmitting(true);
+    setCreateError("");
     try {
       await onCreate({
         title: title.trim(),
@@ -83,6 +99,9 @@ export function NovelSidebar({ novels, selectedId, isLoading, isStreaming, delet
       setThemes("");
       setMustInclude("");
       setAvoidContent("");
+      setIsCreating(false);
+    } catch (reason) {
+      setCreateError(reason instanceof Error ? reason.message : "创建作品失败");
     } finally {
       setIsSubmitting(false);
     }
@@ -102,15 +121,19 @@ export function NovelSidebar({ novels, selectedId, isLoading, isStreaming, delet
       </div>
       <div className="sidebar-heading">
         <div><span className="eyebrow">LIBRARY</span><h2>我的作品</h2></div>
-        <button className="icon-button" title="新建作品" onClick={() => setIsCreating((value) => !value)}><Plus size={17} /></button>
+        <button className="icon-button" title="新建作品" aria-label="新建作品" onClick={() => { setCreateError(""); setIsCreating(true); }}><Plus size={17} /></button>
       </div>
       {isCreating && (
-        <form className="new-novel-form" onSubmit={submit}>
+        <div className="new-novel-backdrop" onMouseDown={onBackdropMouseDown}>
+        <form ref={dialogRef} tabIndex={-1} className="new-novel-form" role="dialog" aria-modal="true" aria-labelledby="new-novel-title" onSubmit={submit}>
+          <div className="new-novel-header"><div><span className="eyebrow">NEW PROJECT</span><h2 id="new-novel-title">创建一部新作品</h2></div><button type="button" className="icon-button" title="关闭" aria-label="关闭" disabled={isSubmitting} onClick={() => { setIsCreating(false); setCreateError(""); }}><X size={17} /></button></div>
+          <div className="new-novel-grid">
           <label>标题<input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="雾中剑" required /></label>
           <label>类型<select value={genre} onChange={(event) => setGenre(event.target.value)}><option>武侠</option><option>仙侠</option><option>科幻</option><option>悬疑</option><option>都市</option><option>历史</option></select></label>
           <label>章节数<input type="number" min="1" max="50" value={totalChapters} onChange={(event) => setTotalChapters(Number(event.target.value))} /></label>
           <label>叙事风格<select value={style} onChange={(event) => setStyle(event.target.value)}><option value="jin_yong">金庸</option><option value="gu_long">古龙</option><option value="murakami">村上春树</option><option value="yu_hua">余华</option></select></label>
-          <label>一句话灵感<textarea value={inspiration} onChange={(event) => setInspiration(event.target.value)} placeholder="一个失忆的剑客在雾都寻找过去……" rows={3} required /></label>
+          <label className="new-novel-wide">一句话灵感<textarea value={inspiration} onChange={(event) => setInspiration(event.target.value)} placeholder="一个失忆的剑客在雾都寻找过去……" rows={3} required /></label>
+          </div>
           <details className="creative-brief-fields">
             <summary><SlidersHorizontal size={14} />创作约束</summary>
             <div className="creative-brief-body">
@@ -137,9 +160,10 @@ export function NovelSidebar({ novels, selectedId, isLoading, isStreaming, delet
               <label>补充说明<textarea value={creativeBrief.notes} maxLength={2000} onChange={(event) => updateBrief("notes", event.target.value)} rows={3} /></label>
             </div>
           </details>
-          <label className="toggle-row"><input type="checkbox" checked={planningReviewEnabled} onChange={(event) => setPlanningReviewEnabled(event.target.checked)} /><span>正文生成前审阅蓝图与分镜</span></label>
-          <button className="primary-button full-width" disabled={isSubmitting || isStreaming}><Sparkles size={15} />{isSubmitting ? "启动中" : "开始创作"}</button>
+          {createError && <p className="new-novel-error" role="alert" aria-live="assertive">{createError}</p>}
+          <div className="new-novel-footer"><label className="toggle-row"><input type="checkbox" checked={planningReviewEnabled} onChange={(event) => setPlanningReviewEnabled(event.target.checked)} /><span>正文生成前审阅蓝图与分镜</span></label><button className="primary-button" disabled={isSubmitting || isStreaming}><Sparkles size={15} />{isSubmitting ? "启动中" : "开始创作"}</button></div>
         </form>
+        </div>
       )}
       <div className="novel-list" aria-label="作品列表">
         {isLoading && <div className="muted-row"><LoaderCircle className="spin" size={15} />加载作品</div>}
@@ -148,31 +172,30 @@ export function NovelSidebar({ novels, selectedId, isLoading, isStreaming, delet
           <div
             className={`novel-item ${item.id === selectedId ? "active" : ""}`}
             key={item.id}
-            role="button"
-            tabIndex={0}
-            onClick={() => onSelect(item.id)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" || event.key === " ") onSelect(item.id);
-            }}
           >
-            <span className="novel-dot" /><span className="novel-item-copy"><strong>{item.title}</strong><small>{item.genre || "未分类"} · {item.total_chapters} 章</small></span>
+            <button
+              type="button"
+              className="novel-select-button"
+              aria-label={`打开《${item.title}》`}
+              aria-current={item.id === selectedId ? "page" : undefined}
+              onClick={() => onSelect(item.id)}
+            >
+              <span className="novel-dot" /><span className="novel-item-copy"><strong>{item.title}</strong><small>{item.genre || "未分类"} · {item.total_chapters} 章</small></span>
+            </button>
             <button
               type="button"
               className="novel-delete-button"
               title="删除作品"
               aria-label={`删除《${item.title}》`}
               disabled={isStreaming || deletingId === item.id}
-              onClick={(event) => {
-                event.stopPropagation();
-                void handleDelete(item).catch(() => undefined);
-              }}
+              onClick={() => void handleDelete(item).catch(() => undefined)}
             >
               {deletingId === item.id ? <LoaderCircle className="spin" size={14} /> : <Trash2 size={14} />}
             </button>
           </div>
         ))}
       </div>
-      <div className="sidebar-footer"><span className="status-dot online" />后端服务已连接<span className="version">v2.0</span></div>
+      <div className="sidebar-footer"><span className={`status-dot ${serviceStatus}`} />{serviceLabels[serviceStatus]}<span className="version">v2.0</span></div>
     </aside>
   );
 }

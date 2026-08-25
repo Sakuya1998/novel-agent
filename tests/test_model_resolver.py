@@ -69,11 +69,18 @@ def test_deepseek_route_builds_openai_compatible_chat(resolver_env, monkeypatch)
         base_url="https://api.deepseek.com",
         chat_model="deepseek-chat",
     )
+    embed = add_profile(
+        store,
+        name="Embed",
+        provider="openai",
+        base_url="https://api.openai.com/v1",
+        chat_model="gpt-4o",
+    )
     save_routes(
         store,
         creative=(deepseek["id"], "deepseek-chat"),
         analysis=(deepseek["id"], "deepseek-reasoner"),
-        embedding=(deepseek["id"], "embed-small"),
+        embedding=(embed["id"], "embed-small"),
     )
     captured = {}
     monkeypatch.setattr(
@@ -225,6 +232,34 @@ def test_qwen_embedding_uses_selected_base_url(resolver_env, monkeypatch):
         "api_key": "key-Qwen",
         "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
     }
+
+
+def test_ollama_profile_runs_without_an_api_key(resolver_env, monkeypatch):
+    cfg, store = resolver_env
+    ollama = store.create_profile(
+        name="Local Ollama",
+        provider="ollama",
+        base_url="http://localhost:11434/v1",
+        api_key="",
+        chat_models=["qwen3:8b"],
+        embedding_models=["nomic-embed-text"],
+    )
+    save_routes(
+        store,
+        creative=(ollama["id"], "qwen3:8b"),
+        analysis=(ollama["id"], "qwen3:8b"),
+        embedding=(ollama["id"], "nomic-embed-text"),
+    )
+    captured = {}
+    monkeypatch.setattr(
+        "models.resolver.ChatOpenAI",
+        lambda **kwargs: captured.update(kwargs) or object(),
+    )
+
+    ModelResolver(config=cfg, store=store).chat("creative")
+
+    assert captured["base_url"] == "http://localhost:11434/v1"
+    assert captured["api_key"] == "not-required"
 
 
 def test_empty_database_falls_back_to_environment(resolver_env):

@@ -2,6 +2,7 @@ import { AlertCircle, Edit3, History, Link2, LoaderCircle, Plus, RotateCcw, Save
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getNovelCanon } from "../api";
 import type { CanonCharacter, CanonDetail, CanonFact, CanonOperation, CanonWorldFact, ScenePlanItem } from "../types";
+import { useDialogLifecycle } from "../useDialogLifecycle";
 import { NarrativeThreadsPanel } from "./NarrativeThreadsPanel";
 
 type Tab = "world" | "facts" | "threads" | "characters" | "audit";
@@ -34,6 +35,7 @@ export function CanonDialog({ open, novelId, editable, disabled, onClose, onSubm
   const [canonicalName, setCanonicalName] = useState("");
   const [reason, setReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const { dialogRef, onBackdropMouseDown } = useDialogLifecycle<HTMLElement>(open, onClose, submitting);
 
   const load = useCallback(async () => {
     if (!open || !novelId) return;
@@ -45,12 +47,6 @@ export function CanonDialog({ open, novelId, editable, disabled, onClose, onSubm
   }, [novelId, open]);
 
   useEffect(() => { void load(); }, [load]);
-  useEffect(() => {
-    if (!open) return;
-    const closeOnEscape = (event: KeyboardEvent) => event.key === "Escape" && onClose();
-    window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [onClose, open]);
 
   const characters = useMemo(() => Object.values(canon?.characters ?? {}), [canon]);
   const canMutate = editable && !disabled && !submitting;
@@ -107,8 +103,8 @@ export function CanonDialog({ open, novelId, editable, disabled, onClose, onSubm
 
   if (!open) return null;
 
-  return <div className="model-settings-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-    <section className="canon-dialog" role="dialog" aria-modal="true" aria-labelledby="canon-title">
+  return <div className="model-settings-backdrop" onMouseDown={onBackdropMouseDown}>
+    <section ref={dialogRef} tabIndex={-1} className="canon-dialog" role="dialog" aria-modal="true" aria-labelledby="canon-title">
       <header className="model-settings-header">
         <div><span className="eyebrow">CANON CONTROL</span><h2 id="canon-title">设定治理</h2></div>
         <div className="model-settings-header-actions"><span className={`model-source-badge ${editable ? "database" : "environment"}`}>{editable ? "可编辑" : "只读"}</span><button className="dialog-close-button" type="button" title="关闭" aria-label="关闭 Canon" onClick={onClose}><X size={18} /></button></div>

@@ -6,7 +6,7 @@ import sqlite3
 from contextlib import contextmanager, suppress
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal, cast
+from typing import Literal
 from urllib.parse import urlparse
 from uuid import uuid4
 
@@ -15,44 +15,188 @@ from cryptography.fernet import Fernet, InvalidToken
 from config import Config
 from security import LOCAL_TENANT_ID, current_tenant_id
 
-ProviderName = Literal["openai", "anthropic", "deepseek", "qwen", "openai_compatible"]
+ProviderName = str
 RoutePurpose = Literal["creative", "analysis", "embedding"]
 
-PROVIDERS = {"openai", "anthropic", "deepseek", "qwen", "openai_compatible"}
 ROUTE_PURPOSES = {"creative", "analysis", "embedding"}
 
 PROVIDER_TEMPLATES: dict[str, dict[str, object]] = {
     "openai": {
         "label": "OpenAI",
+        "group": "国际服务",
+        "protocol": "openai",
         "base_url": "https://api.openai.com/v1",
+        "base_url_mode": "fixed",
+        "api_key_required": True,
+        "supports_embeddings": True,
         "chat_models": ["gpt-4o", "gpt-4.1", "gpt-5"],
         "embedding_models": ["text-embedding-3-small", "text-embedding-3-large"],
     },
     "anthropic": {
         "label": "Anthropic",
+        "group": "国际服务",
+        "protocol": "anthropic",
         "base_url": "",
+        "base_url_mode": "hidden",
+        "api_key_required": True,
+        "supports_embeddings": False,
         "chat_models": ["claude-sonnet-4-5", "claude-opus-4-1"],
+        "embedding_models": [],
+    },
+    "gemini": {
+        "label": "Google Gemini",
+        "group": "国际服务",
+        "protocol": "openai",
+        "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+        "base_url_mode": "required",
+        "api_key_required": True,
+        "supports_embeddings": False,
+        "chat_models": ["gemini-3.7-flash", "gemini-3.1-pro-preview"],
         "embedding_models": [],
     },
     "deepseek": {
         "label": "DeepSeek",
+        "group": "国内服务",
+        "protocol": "openai",
         "base_url": "https://api.deepseek.com",
+        "base_url_mode": "required",
+        "api_key_required": True,
+        "supports_embeddings": False,
         "chat_models": ["deepseek-chat", "deepseek-reasoner"],
         "embedding_models": [],
     },
     "qwen": {
         "label": "通义千问",
+        "group": "国内服务",
+        "protocol": "openai",
         "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "base_url_mode": "required",
+        "api_key_required": True,
+        "supports_embeddings": True,
         "chat_models": ["qwen-plus", "qwen-max", "qwen-turbo"],
         "embedding_models": ["text-embedding-v3"],
     },
+    "xai": {
+        "label": "xAI",
+        "group": "国际服务",
+        "protocol": "openai",
+        "base_url": "https://api.x.ai/v1",
+        "base_url_mode": "required",
+        "api_key_required": True,
+        "supports_embeddings": False,
+        "chat_models": ["grok-4.6", "grok-4.5"],
+        "embedding_models": [],
+    },
+    "groq": {
+        "label": "Groq",
+        "group": "国际服务",
+        "protocol": "openai",
+        "base_url": "https://api.groq.com/openai/v1",
+        "base_url_mode": "required",
+        "api_key_required": True,
+        "supports_embeddings": False,
+        "chat_models": ["openai/gpt-oss-120b", "llama-3.3-70b-versatile"],
+        "embedding_models": [],
+    },
+    "moonshot": {
+        "label": "Kimi / Moonshot",
+        "group": "国内服务",
+        "protocol": "openai",
+        "base_url": "https://api.moonshot.cn/v1",
+        "base_url_mode": "required",
+        "api_key_required": True,
+        "supports_embeddings": False,
+        "chat_models": ["kimi-k2.5", "kimi-k2-turbo-preview"],
+        "embedding_models": [],
+    },
+    "zhipu": {
+        "label": "智谱 GLM",
+        "group": "国内服务",
+        "protocol": "openai",
+        "base_url": "https://open.bigmodel.cn/api/paas/v4",
+        "base_url_mode": "required",
+        "api_key_required": True,
+        "supports_embeddings": True,
+        "chat_models": ["glm-5", "glm-4.7"],
+        "embedding_models": ["embedding-3"],
+    },
+    "volcengine": {
+        "label": "火山方舟",
+        "group": "国内服务",
+        "protocol": "openai",
+        "base_url": "https://ark.cn-beijing.volces.com/api/v3",
+        "base_url_mode": "required",
+        "api_key_required": True,
+        "supports_embeddings": True,
+        "chat_models": [],
+        "embedding_models": [],
+    },
+    "siliconflow": {
+        "label": "SiliconFlow",
+        "group": "国内服务",
+        "protocol": "openai",
+        "base_url": "https://api.siliconflow.cn/v1",
+        "base_url_mode": "required",
+        "api_key_required": True,
+        "supports_embeddings": True,
+        "chat_models": [],
+        "embedding_models": [],
+    },
+    "openrouter": {
+        "label": "OpenRouter",
+        "group": "聚合服务",
+        "protocol": "openai",
+        "base_url": "https://openrouter.ai/api/v1",
+        "base_url_mode": "required",
+        "api_key_required": True,
+        "supports_embeddings": True,
+        "chat_models": [],
+        "embedding_models": [],
+    },
+    "ollama": {
+        "label": "Ollama",
+        "group": "本地服务",
+        "protocol": "openai",
+        "base_url": "http://localhost:11434/v1",
+        "base_url_mode": "required",
+        "api_key_required": False,
+        "supports_embeddings": True,
+        "chat_models": ["qwen3:8b", "llama3.2"],
+        "embedding_models": ["nomic-embed-text"],
+    },
     "openai_compatible": {
         "label": "OpenAI Compatible",
+        "group": "自定义服务",
+        "protocol": "openai",
         "base_url": "",
+        "base_url_mode": "required",
+        "api_key_required": False,
+        "supports_embeddings": True,
         "chat_models": [],
         "embedding_models": [],
     },
 }
+
+PROVIDERS = set(PROVIDER_TEMPLATES)
+
+
+def provider_template(provider: str) -> dict[str, object]:
+    template = PROVIDER_TEMPLATES.get(provider)
+    if template is None:
+        raise ModelSettingsError(f"不支持的模型供应商: {provider}")
+    return template
+
+
+def provider_protocol(provider: str) -> str:
+    return str(provider_template(provider)["protocol"])
+
+
+def provider_supports_embeddings(provider: str) -> bool:
+    return bool(provider_template(provider)["supports_embeddings"])
+
+
+def provider_requires_api_key(provider: str) -> bool:
+    return bool(provider_template(provider)["api_key_required"])
 
 
 class ModelSettingsError(RuntimeError):
@@ -345,13 +489,12 @@ class ModelSettingsStore:
             raise ModelSecretError("模型 API Key 解密失败，请重新录入") from exc
 
     def _validate_profile(self, provider: str, base_url: str) -> ProviderName:
-        if provider not in PROVIDERS:
-            raise ModelSettingsError(f"不支持的模型供应商: {provider}")
-        if provider in {"deepseek", "qwen", "openai_compatible"}:
+        template = provider_template(provider)
+        if template["base_url_mode"] == "required":
             parsed = urlparse(base_url)
             if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-                raise ModelSettingsError("OpenAI 兼容服务必须配置有效的 HTTP(S) API 地址")
-        return cast(ProviderName, provider)
+                raise ModelSettingsError("模型服务必须配置有效的 HTTP(S) API 地址")
+        return provider
 
     def _public_profile(self, row: sqlite3.Row) -> dict:
         secret = self._decrypt_secret(row["api_key_encrypted"])
@@ -461,14 +604,14 @@ class ModelSettingsStore:
         )
         try:
             with self._conn() as conn:
-                if clean_provider == "anthropic":
+                if not provider_supports_embeddings(clean_provider):
                     embedding_route = conn.execute(
                         "SELECT 1 FROM model_routes WHERE tenant_id = ? AND purpose = 'embedding' AND profile_id = ?",
                         (self._tenant_id(), profile_id),
                     ).fetchone()
                     if embedding_route:
                         raise ProfileInUseError(
-                            "正在用于嵌入模型的服务不能改为 Anthropic，请先切换模型分工"
+                            "正在用于嵌入模型的服务不能改为不支持嵌入的供应商，请先切换模型分工"
                         )
                 conn.execute(
                     """
@@ -564,8 +707,9 @@ class ModelSettingsStore:
                 ).fetchone()
                 if profile is None:
                     raise InvalidModelRouteError(f"{purpose} 路由引用的模型服务不存在")
-                if purpose == "embedding" and profile["provider"] == "anthropic":
-                    raise InvalidModelRouteError("Anthropic 服务不能用于嵌入模型")
+                if purpose == "embedding" and not provider_supports_embeddings(profile["provider"]):
+                    label = str(provider_template(profile["provider"])["label"])
+                    raise InvalidModelRouteError(f"{label} 服务不能用于嵌入模型")
                 fallback_profile_id = str(target.get("fallback_profile_id", "")).strip()
                 fallback_model_name = str(target.get("fallback_model_name", "")).strip()
                 if bool(fallback_profile_id) != bool(fallback_model_name):

@@ -9,23 +9,27 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc -b --pretty false",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "check": "npm run typecheck && npm test && npm run build"
   },
   "dependencies": {
-    "@vitejs/plugin-react": "latest",
-    "lucide-react": "latest",
-    "react": "latest",
-    "react-dom": "latest",
-    "vite": "latest"
+    "lucide-react": "1.31.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
   },
   "devDependencies": {
+    "@vitejs/plugin-react": "6.0.5",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.4",
-    "@types/react": "latest",
-    "@types/react-dom": "latest",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.4",
     "jsdom": "^30.0.1",
-    "typescript": "latest",
+    "typescript": "7.0.2",
+    "vite": "8.2.1",
     "vitest": "^4.1.10"
+  },
+  "engines": {
+    "node": "^22.13.0 || >=24.0.0"
   }
 }

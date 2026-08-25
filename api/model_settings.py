@@ -14,6 +14,7 @@ from models.model_settings import (
     ModelSettingsStore,
     ProfileInUseError,
     ProviderName,
+    provider_template,
 )
 from models.resolver import ModelConnectionError, ModelResolver
 
@@ -44,10 +45,14 @@ class ProfileWrite(BaseModel):
 
     @model_validator(mode="after")
     def validate_compatible_url(self):
-        if self.provider in {"deepseek", "qwen", "openai_compatible"}:
+        try:
+            template = provider_template(self.provider)
+        except ModelSettingsError as exc:
+            raise ValueError(str(exc)) from exc
+        if template["base_url_mode"] == "required":
             parsed = urlparse(self.base_url)
             if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-                raise ValueError("OpenAI 兼容服务必须配置有效的 HTTP(S) API 地址")
+                raise ValueError("模型服务必须配置有效的 HTTP(S) API 地址")
         return self
 
 

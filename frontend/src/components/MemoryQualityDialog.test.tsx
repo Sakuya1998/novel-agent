@@ -39,4 +39,10 @@ describe("MemoryQualityDialog", () => {
     await userEvent.click(screen.getByRole("button", { name: "重建并评测索引" }));
     expect(onRebuild).toHaveBeenCalledWith(true, 5);
   });
+
+  it("renders inside the shared modal backdrop", () => {
+    render(<MemoryQualityDialog open history={history} onClose={vi.fn()} onRefresh={vi.fn().mockResolvedValue(history)} onEvaluate={vi.fn().mockResolvedValue({})} onRebuild={vi.fn().mockResolvedValue({})} />);
+
+    expect(screen.getByRole("dialog", { name: "长期记忆质量" }).parentElement).toHaveClass("model-settings-backdrop");
+  });
 });

@@ -10,6 +10,7 @@ from config import Config
 from models.model_settings import (
     InvalidModelRouteError,
     ModelSecretError,
+    ModelSettingsError,
     ModelSettingsStore,
     ProfileInUseError,
 )
@@ -162,8 +163,36 @@ def test_public_settings_include_templates_and_database_source(settings_store):
 
     assert public["source"] == "database"
     assert "deepseek" in public["templates"]
+    assert {
+        "gemini", "xai", "groq", "moonshot", "zhipu", "volcengine",
+        "siliconflow", "openrouter", "ollama", "openai_compatible",
+    } <= set(public["templates"])
+    assert public["templates"]["ollama"]["api_key_required"] is False
+    assert public["templates"]["anthropic"]["supports_embeddings"] is False
     assert public["profiles"][0]["has_api_key"] is True
     assert "api_key" not in public["profiles"][0]
+
+
+def test_provider_catalog_rejects_unknown_services_and_invalid_urls(settings_store):
+    with pytest.raises(ModelSettingsError, match="不支持的模型供应商"):
+        settings_store.create_profile(
+            name="Unknown",
+            provider="unknown-provider",
+            base_url="https://example.com/v1",
+            api_key="",
+            chat_models=[],
+            embedding_models=[],
+        )
+
+    with pytest.raises(ModelSettingsError, match="API 地址"):
+        settings_store.create_profile(
+            name="Broken Ollama",
+            provider="ollama",
+            base_url="localhost:11434",
+            api_key="",
+            chat_models=["qwen3:8b"],
+            embedding_models=[],
+        )
 
 
 def test_fallback_route_is_persisted_and_blocks_profile_deletion(settings_store):

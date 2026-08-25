@@ -17,6 +17,9 @@ from models.model_settings import (
     ModelSettingsStore,
     ProviderName,
     RoutePurpose,
+    provider_protocol,
+    provider_requires_api_key,
+    provider_supports_embeddings,
 )
 from models.runtime import ManagedChatModel
 
@@ -171,8 +174,10 @@ class ModelResolver:
         except ModelProfileNotFoundError as exc:
             raise ModelConfigurationError(f"{purpose} {label}路由引用的模型服务不存在") from exc
         api_key = str(profile["api_key"])
-        if not api_key:
+        if not api_key and provider_requires_api_key(profile["provider"]):
             raise ModelConfigurationError(f"{purpose} {label}模型服务尚未配置 API Key")
+        if not api_key:
+            api_key = "not-required"
         return ResolvedModel(
             purpose=purpose,
             provider=profile["provider"],
@@ -213,8 +218,8 @@ class ModelResolver:
         self.resolve_chat_candidates("creative")
         self.resolve_chat_candidates("analysis")
         resolved = self.resolve("embedding")
-        if resolved.provider == "anthropic":
-            raise ModelConfigurationError("Anthropic 服务不能用于嵌入模型")
+        if not provider_supports_embeddings(resolved.provider):
+            raise ModelConfigurationError(f"{resolved.provider} 服务不能用于嵌入模型")
 
     def chat(
         self,
@@ -229,7 +234,7 @@ class ModelResolver:
         selected_temperature = self.config.temperature if temperature is None else temperature
         candidates: list[tuple[ResolvedModel, BaseChatModel]] = []
         for resolved in resolved_candidates:
-            if resolved.provider == "anthropic":
+            if provider_protocol(resolved.provider) == "anthropic":
                 model = _build_anthropic_chat(resolved, selected_temperature, streaming)
             else:
                 model = _build_openai_chat(resolved, selected_temperature, streaming)
@@ -243,8 +248,8 @@ class ModelResolver:
 
     def embeddings(self) -> Embeddings:
         resolved = self.resolve("embedding")
-        if resolved.provider == "anthropic":
-            raise ModelConfigurationError("Anthropic 服务不能用于嵌入模型")
+        if not provider_supports_embeddings(resolved.provider):
+            raise ModelConfigurationError(f"{resolved.provider} 服务不能用于嵌入模型")
         return _build_embeddings(resolved)
 
     async def test_profile(
@@ -255,8 +260,10 @@ class ModelResolver:
     ) -> dict[str, object]:
         profile = self.store.get_runtime_profile(profile_id)
         secret = str(profile["api_key"])
-        if not secret:
+        if not secret and provider_requires_api_key(profile["provider"]):
             raise ModelConnectionError("模型服务尚未配置 API Key")
+        if not secret:
+            secret = "not-required"
         purpose: RoutePurpose = "embedding" if kind == "embedding" else "creative"
         resolved = ResolvedModel(
             purpose=purpose,
@@ -273,11 +280,11 @@ class ModelResolver:
         started = perf_counter()
         try:
             if kind == "embedding":
-                if resolved.provider == "anthropic":
-                    raise ModelConnectionError("Anthropic 服务不能用于嵌入模型")
+                if not provider_supports_embeddings(resolved.provider):
+                    raise ModelConnectionError(f"{resolved.provider} 服务不能用于嵌入模型")
                 await _build_embeddings(resolved).aembed_query("connection test")
             else:
-                if resolved.provider == "anthropic":
+                if provider_protocol(resolved.provider) == "anthropic":
                     model = _build_anthropic_chat(resolved, 0.0, False)
                 else:
                     model = _build_openai_chat(resolved, 0.0, False)

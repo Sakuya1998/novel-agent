@@ -8,6 +8,57 @@ import { ModelRoutesPanel } from "./ModelRoutesPanel";
 afterEach(cleanup);
 
 describe("ModelRoutesPanel", () => {
+  it("defaults each route to a profile that actually lists a compatible model", () => {
+    const settings: ModelSettings = {
+      source: "database",
+      templates: {} as ModelSettings["templates"],
+      profiles: [
+        {
+          id: "chat-only",
+          name: "Chat only",
+          provider: "openai_compatible",
+          base_url: "https://chat.example.com/v1",
+          has_api_key: true,
+          api_key_masked: "***",
+          chat_models: ["chat-model"],
+          embedding_models: [],
+        },
+        {
+          id: "empty",
+          name: "Empty",
+          provider: "qwen",
+          base_url: "https://empty.example.com/v1",
+          has_api_key: true,
+          api_key_masked: "***",
+          chat_models: [],
+          embedding_models: [],
+        },
+        {
+          id: "embedding",
+          name: "Embedding",
+          provider: "qwen",
+          base_url: "https://embed.example.com/v1",
+          has_api_key: true,
+          api_key_masked: "***",
+          chat_models: [],
+          embedding_models: ["embed-model"],
+        },
+      ],
+      routes: {},
+    };
+
+    render(<ModelRoutesPanel settings={settings} disabled={false} busyAction="" onSave={vi.fn()} />);
+
+    const primaryProfiles = screen.getAllByLabelText("主模型服务");
+    const primaryModels = screen.getAllByLabelText("主模型名称");
+    expect(primaryProfiles[0]).toHaveValue("chat-only");
+    expect(primaryModels[0]).toHaveValue("chat-model");
+    expect(primaryProfiles[1]).toHaveValue("chat-only");
+    expect(primaryModels[1]).toHaveValue("chat-model");
+    expect(primaryProfiles[2]).toHaveValue("embedding");
+    expect(primaryModels[2]).toHaveValue("embed-model");
+  });
+
   it("saves an explicit fallback for chat routes", async () => {
     const settings: ModelSettings = {
       source: "database",

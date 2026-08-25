@@ -1,6 +1,7 @@
 import { Activity, AlertTriangle, CheckCircle2, RefreshCw, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { ModelTrace } from "../types";
+import { useDialogLifecycle } from "../useDialogLifecycle";
 
 interface Props {
   open: boolean;
@@ -17,6 +18,7 @@ export function ModelTraceDialog({ open, traces, onRefresh, onClose }: Props) {
   const [agent, setAgent] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const { dialogRef, onBackdropMouseDown } = useDialogLifecycle<HTMLElement>(open, onClose, loading);
   const agents = useMemo(
     () => Array.from(new Set(traces.map((trace) => trace.agent))).sort(),
     [traces],
@@ -35,8 +37,8 @@ export function ModelTraceDialog({ open, traces, onRefresh, onClose }: Props) {
   }
 
   if (!open) return null;
-  return <div className="model-settings-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-    <section className="model-settings-dialog model-trace-dialog" role="dialog" aria-modal="true" aria-labelledby="model-trace-title">
+  return <div className="model-settings-backdrop" onMouseDown={onBackdropMouseDown}>
+    <section ref={dialogRef} tabIndex={-1} className="model-settings-dialog model-trace-dialog" role="dialog" aria-modal="true" aria-labelledby="model-trace-title">
       <header className="model-settings-header">
         <div><span className="eyebrow">AGENT TRACE</span><h2 id="model-trace-title">模型调用轨迹</h2></div>
         <div className="model-settings-header-actions"><span className="model-source-badge database">最近 {traces.length} 条</span><button className="dialog-close-button" type="button" title="关闭" aria-label="关闭模型调用轨迹" onClick={onClose}><X size={18} /></button></div>

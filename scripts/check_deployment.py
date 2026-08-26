@@ -31,6 +31,20 @@ def main() -> int:
     require("/readyz" in dockerfile, "API healthcheck 必须检查 /readyz")
     require("chroma run" not in dockerfile.lower(), "API 镜像不得启动存在已知漏洞的 Chroma HTTP 服务")
 
+    # Chroma is intentionally embedded in this application. The dependency
+    # audit exceptions are only valid while runtime code does not expose its
+    # HTTP server or import the server package.
+    runtime_sources = [ROOT / "main.py", ROOT / "api", ROOT / "memory"]
+    for source in runtime_sources:
+        paths = [source] if source.is_file() else sorted(source.rglob("*.py"))
+        for path in paths:
+            contents = path.read_text(encoding="utf-8")
+            require("HttpClient(" not in contents, f"运行时代码不得使用 Chroma HttpClient: {path.relative_to(ROOT)}")
+            require(
+                "chromadb.server" not in contents,
+                f"运行时代码不得导入 Chroma HTTP server: {path.relative_to(ROOT)}",
+            )
+
     services = compose.get("services", {})
     api = services.get("api", {})
     frontend = services.get("frontend", {})

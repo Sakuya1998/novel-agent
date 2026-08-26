@@ -84,10 +84,16 @@ jobs:
           python-version: "3.14"
       - run: pip install pip-audit
       - name: Dependency audit
-        # PYSEC-2026-311 affects Chroma's HTTP server. This project only uses
-        # embedded persistent storage; check_deployment.py enforces that the
-        # vulnerable server is neither started nor added as a Compose service.
-        run: pip-audit -r requirements.txt --strict --ignore-vuln PYSEC-2026-311
+        # ChromaDB 1.5.9 is the latest PyPI release, but these advisories have
+        # no upstream fixed version yet. This project uses only embedded
+        # persistent storage; check_deployment.py rejects HTTP-server usage
+        # and Compose services, so keep this exception explicit and scoped.
+        run: >
+          pip-audit -r requirements.txt --strict
+          --ignore-vuln PYSEC-2026-311
+          --ignore-vuln CVE-2026-45830
+          --ignore-vuln CVE-2026-45831
+          --ignore-vuln CVE-2026-45833
       - uses: actions/setup-node@v4
         with:
           node-version: "24"

@@ -8,22 +8,22 @@ from langgraph.types import Command
 
 def _patch_llms(monkeypatch, fake_llm) -> None:
     for mod, attr in [
-        ("agents.world_builder", "get_llm"),
-        ("agents.character_designer", "get_llm"),
-        ("agents.plot_planner", "get_analyzer_llm"),
-        ("agents.scene_planner", "get_analyzer_llm"),
-        ("agents.scene_writer", "get_llm"),
-        ("agents.scene_rewriter", "get_llm"),
-        ("agents.style_editor", "get_llm"),
-        ("agents.consistency_checker", "get_analyzer_llm"),
+        ("novel_agent.agents.world_builder", "get_llm"),
+        ("novel_agent.agents.character_designer", "get_llm"),
+        ("novel_agent.agents.plot_planner", "get_analyzer_llm"),
+        ("novel_agent.agents.scene_planner", "get_analyzer_llm"),
+        ("novel_agent.agents.scene_writer", "get_llm"),
+        ("novel_agent.agents.scene_rewriter", "get_llm"),
+        ("novel_agent.agents.style_editor", "get_llm"),
+        ("novel_agent.agents.consistency_checker", "get_analyzer_llm"),
     ]:
         monkeypatch.setattr(f"{mod}.{attr}", lambda **kw: fake_llm)
 
 
 async def test_async_checkpoint_survives_restart_and_is_sync_readable(tmp_path, monkeypatch):
     """异步暂停现场可跨重启恢复,且同步 saver 能读取同一快照。"""
-    from graph.builder import build_graph
-    from graph.state import create_initial_state
+    from novel_agent.graph.builder import build_graph
+    from novel_agent.graph.state import create_initial_state
 
     fake = FakeListChatModel(responses=[
         "```yaml\n世界观名称: 测试世界\n```",
@@ -71,8 +71,8 @@ async def test_async_checkpoint_survives_restart_and_is_sync_readable(tmp_path, 
 
 async def test_legacy_checkpoint_at_scene_writer_rebuilds_missing_scene_plan(tmp_path, monkeypatch):
     """旧检查点可直接从 scene_writer 续跑,缺失分镜时使用兼容计划。"""
-    from graph.builder import build_graph
-    from graph.state import create_initial_state
+    from novel_agent.graph.builder import build_graph
+    from novel_agent.graph.state import create_initial_state
 
     fake = FakeListChatModel(responses=["旧检查点续写正文。", "润色正文。", "[]"])
     _patch_llms(monkeypatch, fake)

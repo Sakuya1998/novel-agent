@@ -2,7 +2,7 @@
 
 import pytest
 
-from memory.canon import (
+from novel_agent.memory.canon import (
     CANON_VERSION,
     apply_canon_operation,
     build_canon,

@@ -1,6 +1,6 @@
 """长期记忆检索质量与重建测试。"""
 
-from tools.memory_quality import (
+from novel_agent.tools.memory_quality import (
     build_memory_eval_cases,
     build_memory_records,
     evaluate_memory_retrieval,

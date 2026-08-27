@@ -1,7 +1,7 @@
 import pytest
 from langchain_core.language_models.fake_chat_models import FakeListChatModel
 
-from agents.replanner import REPLAN_VERSION, ReplannerAgent, merge_future_outline
+from novel_agent.agents.replanner import REPLAN_VERSION, ReplannerAgent, merge_future_outline
 
 
 def _outline() -> list[dict]:
@@ -70,8 +70,8 @@ async def test_replanner_returns_validated_patch():
 
 
 async def test_post_finalization_replan_updates_future_timeline(monkeypatch):
-    from graph import nodes
-    from memory.canon import build_canon
+    from novel_agent.graph import nodes
+    from novel_agent.memory.canon import build_canon
 
     class StubReplanner:
         async def analyze(self, **kwargs):

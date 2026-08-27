@@ -48,8 +48,8 @@
 要求 **Python 3.14+**(全部依赖均为最新稳定版,见 requirements.txt)。
 
 ```bash
-# 1. 安装依赖
-pip install -r requirements.txt
+# 1. 安装项目与开发依赖
+pip install -e ".[dev]"
 
 # 2. 可选：复制环境变量作为首次启动回退
 cp .env.example .env
@@ -67,7 +67,7 @@ python main.py --resume novel_ab12cd34 --feedback "加强追逐" --scene-number 
 python main.py --resume novel_ab12cd34 --version-number 3
 
 # 3b. API 服务(前后端分离模式)
-uvicorn api.server:app --reload
+uvicorn novel_agent.api.server:app --reload
 
 # 3c. React + TypeScript 工作台(另开终端)
 cd frontend
@@ -89,17 +89,20 @@ python -m scripts.run_evaluations --baseline-run-id eval_xxx --json
 
 ```
 novel-agent/
-├── main.py                # CLI 入口
-├── config.py              # 配置 + STYLE_PROFILES 风格档案
-├── models/                # 加密模型档案、三类模型路由与 LangChain 客户端
-├── agents/                # 14 个 Agent
-├── graph/                 # LangGraph:state / nodes / edges / builder
-├── memory/                # 结构化 Canon + ChromaDB 向量记忆 + SQLite 章节存储
-├── tools/                 # 5 个工具
-├── prompts/               # 10 个 Prompt 模板 + PromptManager
+├── src/novel_agent/       # Python 应用包
+│   ├── main.py            # CLI 实现
+│   ├── config.py          # 配置 + STYLE_PROFILES 风格档案
+│   ├── models/            # 加密模型档案、三类模型路由与 LangChain 客户端
+│   ├── agents/            # 14 个 Agent
+│   ├── graph/             # LangGraph:state / nodes / edges / builder
+│   ├── memory/            # 结构化 Canon + ChromaDB 向量记忆 + SQLite 章节存储
+│   ├── tools/             # 分析、评测、导入导出与备份工具
+│   └── prompts/           # Prompt 模板 + PromptManager
+├── main.py                # 兼容 CLI 启动器
 ├── frontend/              # React + TypeScript 独立工作台
-├── api/server.py          # FastAPI 服务(持久后台任务 + 兼容 NDJSON 流)
-└── output/                # 导出产物
+├── output/                # 导出产物
+├── data/                  # 运行期密钥、备份与传输文件
+└── memory/                # 运行期 SQLite 与 Chroma 数据
 ```
 
 ## API 一览
@@ -491,7 +494,7 @@ API 额外删除全部 Linux capabilities，SQLite、checkpoint、Chroma、模�
 ## 测试与质量
 
 ```bash
-ruff check agents graph memory tools prompts models api config.py main.py tests
+ruff check src scripts tests main.py
 pytest
 cd frontend && npm test && npm run typecheck && npm run build
 ```

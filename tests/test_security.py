@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from security import expiry_iso, hash_password, new_session_token, token_hash, verify_password
+from novel_agent.security import expiry_iso, hash_password, new_session_token, token_hash, verify_password
 
 
 def test_password_hash_is_salted_and_verifiable():

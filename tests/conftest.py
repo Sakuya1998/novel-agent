@@ -26,7 +26,7 @@ def fake_chapter_digest_model(monkeypatch) -> FakeListChatModel:
         ]
       }
     ]'''])
-    monkeypatch.setattr("agents.chapter_digest.get_analyzer_llm", lambda: fake)
+    monkeypatch.setattr("novel_agent.agents.chapter_digest.get_analyzer_llm", lambda: fake)
     return fake
 
 
@@ -41,7 +41,7 @@ def fake_replanner_model(monkeypatch) -> FakeListChatModel:
         "outline_updates": []
       }
     ]'''])
-    monkeypatch.setattr("agents.replanner.get_analyzer_llm", lambda: fake)
+    monkeypatch.setattr("novel_agent.agents.replanner.get_analyzer_llm", lambda: fake)
     return fake
 
 
@@ -62,7 +62,7 @@ def fake_book_auditor_model(monkeypatch) -> FakeListChatModel:
         "revision_priorities": ["补强次要角色在结局前的选择。"]
       }
     ]'''])
-    monkeypatch.setattr("agents.book_auditor.get_analyzer_llm", lambda: fake)
+    monkeypatch.setattr("novel_agent.agents.book_auditor.get_analyzer_llm", lambda: fake)
     return fake
 
 
@@ -87,8 +87,8 @@ def fake_llm() -> FakeListChatModel:
 @pytest.fixture
 def store(tmp_path):
     """隔离的 SQLite 存储。"""
-    from config import Config
-    from memory.sql_store import NovelStore
+    from novel_agent.config import Config
+    from novel_agent.memory.sql_store import NovelStore
 
     cfg = Config(sqlite_db_path=str(tmp_path / "test.db"), chroma_persist_dir=str(tmp_path / "chroma"))
     return NovelStore(cfg)

@@ -3,12 +3,12 @@
 import argparse
 import json
 
-from config import Config
-from memory.canon import ensure_canon
-from memory.hierarchical import build_hierarchical_memory
-from memory.sql_store import NovelStore
-from memory.vector_store import NovelMemory
-from tools.memory_quality import (
+from novel_agent.config import Config
+from novel_agent.memory.canon import ensure_canon
+from novel_agent.memory.hierarchical import build_hierarchical_memory
+from novel_agent.memory.sql_store import NovelStore
+from novel_agent.memory.vector_store import NovelMemory
+from novel_agent.tools.memory_quality import (
     build_memory_eval_cases,
     build_memory_records,
     evaluate_memory_retrieval,

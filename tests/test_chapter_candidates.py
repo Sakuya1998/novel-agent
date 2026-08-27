@@ -1,4 +1,4 @@
-from agents.chapter_candidate import (
+from novel_agent.agents.chapter_candidate import (
     ChapterCandidateAgent,
     chapter_candidate_matches_state,
     chapter_candidate_source_hash,
@@ -59,8 +59,8 @@ async def test_candidate_agent_generates_polishes_and_scores_an_independent_draf
                 "scene_drafts": [{"scene_number": 1, "content": "甲乙丙"}],
             }
 
-    monkeypatch.setattr("agents.chapter_candidate.SceneWriterAgent", Writer)
-    monkeypatch.setattr("agents.chapter_candidate.StyleEditorAgent", Editor)
+    monkeypatch.setattr("novel_agent.agents.chapter_candidate.SceneWriterAgent", Writer)
+    monkeypatch.setattr("novel_agent.agents.chapter_candidate.StyleEditorAgent", Editor)
 
     result = await ChapterCandidateAgent("novel-1").generate(
         _state(),

@@ -1,12 +1,12 @@
 """Structured creative brief normalization and formatting tests."""
 
-from models.creative_brief import (
+from novel_agent.models.creative_brief import (
     CREATIVE_BRIEF_SCHEMA_VERSION,
     empty_creative_brief,
     format_creative_brief,
     normalize_creative_brief,
 )
-from tools.analysis_tools import build_consistency_diagnostics
+from novel_agent.tools.analysis_tools import build_consistency_diagnostics
 
 
 def test_empty_creative_brief_has_stable_defaults():

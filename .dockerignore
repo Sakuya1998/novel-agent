@@ -1,5 +1,10 @@
 .git
 .gitignore
+build
+dist
+ui
+novel_agent.egg-info
+__pycache__
 .env
 .venv
 venv

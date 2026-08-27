@@ -4,9 +4,9 @@ import argparse
 import asyncio
 import json
 
-from config import Config
-from memory.sql_store import NovelStore
-from tools.evaluation_benchmark import run_evaluation_benchmark
+from novel_agent.config import Config
+from novel_agent.memory.sql_store import NovelStore
+from novel_agent.tools.evaluation_benchmark import run_evaluation_benchmark
 
 
 def build_parser() -> argparse.ArgumentParser:

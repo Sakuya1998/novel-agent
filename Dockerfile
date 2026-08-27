@@ -3,10 +3,12 @@
 FROM python:3.14-slim AS builder
 
 WORKDIR /build
-COPY requirements.txt .
+COPY requirements.txt pyproject.toml README.md ./
+COPY src ./src
 
 RUN python -m venv /opt/venv \
-    && /opt/venv/bin/pip install --no-cache-dir -r requirements.txt
+    && /opt/venv/bin/pip install --no-cache-dir -r requirements.txt \
+    && /opt/venv/bin/pip install --no-cache-dir --no-deps .
 
 # ---- 运行阶段:仅保留 venv 产物 + 运行所需源码 ----
 FROM python:3.14-slim
@@ -19,15 +21,8 @@ ENV PATH="/opt/venv/bin:$PATH" \
 WORKDIR /app
 
 # 仅复制运行产物和维护脚本(tests/文档等不进镜像)
-COPY config.py main.py security.py ./
-COPY agents ./agents
-COPY api ./api
-COPY graph ./graph
-COPY memory ./memory
-COPY models ./models
-COPY prompts ./prompts
+COPY src ./src
 COPY scripts ./scripts
-COPY tools ./tools
 
 # 非 root 运行(生产实践);memory/ 保存数据库,data/ 保存模型密钥主密钥
 RUN useradd --create-home appuser \
@@ -38,7 +33,9 @@ USER appuser
 EXPOSE 8000
 STOPSIGNAL SIGTERM
 
+ENV PYTHONPATH="/app/src"
+
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/readyz', timeout=3)" || exit 1
 
-CMD ["uvicorn", "api.server:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "novel_agent.api.server:app", "--host", "0.0.0.0", "--port", "8000"]

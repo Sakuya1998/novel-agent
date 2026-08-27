@@ -4,13 +4,13 @@ import pytest
 from langchain_core.language_models.fake_chat_models import FakeListChatModel
 from langchain_core.messages import AIMessage
 
-from agents import StructuredOutputError
-from agents.character_designer import CharacterDesignerAgent
-from agents.consistency_checker import ConsistencyCheckerAgent
-from agents.plot_planner import PlotPlannerAgent, validate_narrative_outline
-from agents.scene_planner import ScenePlannerAgent, _normalize_word_budgets
-from agents.scene_rewriter import SceneRewriterAgent
-from agents.scene_writer import SceneWriterAgent
+from novel_agent.agents import StructuredOutputError
+from novel_agent.agents.character_designer import CharacterDesignerAgent
+from novel_agent.agents.consistency_checker import ConsistencyCheckerAgent
+from novel_agent.agents.plot_planner import PlotPlannerAgent, validate_narrative_outline
+from novel_agent.agents.scene_planner import ScenePlannerAgent, _normalize_word_budgets
+from novel_agent.agents.scene_rewriter import SceneRewriterAgent
+from novel_agent.agents.scene_writer import SceneWriterAgent
 
 
 async def test_character_designer_retries_once_after_invalid_yaml():
@@ -210,7 +210,7 @@ async def test_consistency_checker_merges_deterministic_checks_into_llm_issues(m
         captured["prompt"] = prompt
         return "[]", []
 
-    monkeypatch.setattr("agents.consistency_checker.invoke_structured", fake_invoke)
+    monkeypatch.setattr("novel_agent.agents.consistency_checker.invoke_structured", fake_invoke)
     agent = ConsistencyCheckerAgent(llm=object())
 
     issues = await agent.check(

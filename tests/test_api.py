@@ -10,17 +10,17 @@ import json
 import pytest
 from langchain_core.language_models.fake_chat_models import FakeListChatModel
 
-from api import server
+from novel_agent.api import server
 
 
 @pytest.fixture
 async def api_env(tmp_path, monkeypatch):
     """隔离的 API 环境:独立 SQLite + 重置图注册表 + 注入图定稿存储。"""
-    from config import Config
-    from memory.sql_store import NovelStore
+    from novel_agent.config import Config
+    from novel_agent.memory.sql_store import NovelStore
 
     cfg = Config(
-        sqlite_db_path=str(tmp_path / "api.db"),
+        sqlite_db_path=str(tmp_path / "novel_agent.api.db"),
         chroma_persist_dir=str(tmp_path / "chroma"),
         checkpoint_db_path=str(tmp_path / "checkpoints.db"),
         model_secret_key_path=str(tmp_path / "data" / "model-settings.key"),
@@ -30,7 +30,7 @@ async def api_env(tmp_path, monkeypatch):
     isolated = NovelStore(cfg)
     monkeypatch.setattr(server, "cfg", cfg)
     monkeypatch.setattr(server, "store", isolated)
-    monkeypatch.setattr("graph.nodes._store", isolated)  # 定稿持久化同库
+    monkeypatch.setattr("novel_agent.graph.nodes._store", isolated)  # 定稿持久化同库
     server._novel_locks.clear()
     async with server.lifespan(server.app):
         yield server
@@ -54,14 +54,14 @@ def fake_llm_7(monkeypatch):
         sleep=0.01,
     )
     for mod, attr in [
-        ("agents.world_builder", "get_llm"),
-        ("agents.character_designer", "get_llm"),
-        ("agents.plot_planner", "get_analyzer_llm"),
-        ("agents.scene_planner", "get_analyzer_llm"),
-        ("agents.scene_writer", "get_llm"),
-        ("agents.scene_rewriter", "get_llm"),
-        ("agents.style_editor", "get_llm"),
-        ("agents.consistency_checker", "get_analyzer_llm"),
+        ("novel_agent.agents.world_builder", "get_llm"),
+        ("novel_agent.agents.character_designer", "get_llm"),
+        ("novel_agent.agents.plot_planner", "get_analyzer_llm"),
+        ("novel_agent.agents.scene_planner", "get_analyzer_llm"),
+        ("novel_agent.agents.scene_writer", "get_llm"),
+        ("novel_agent.agents.scene_rewriter", "get_llm"),
+        ("novel_agent.agents.style_editor", "get_llm"),
+        ("novel_agent.agents.consistency_checker", "get_analyzer_llm"),
     ]:
         monkeypatch.setattr(f"{mod}.{attr}", lambda **kw: fake)
     return fake
@@ -100,7 +100,7 @@ async def test_auth_status_reflects_local_and_authenticated_modes(api_env):
 
 
 def test_production_config_rejects_anonymous_mode():
-    from config import Config
+    from novel_agent.config import Config
 
     unsafe = Config(app_environment="production", auth_enabled=False)
     with pytest.raises(RuntimeError, match="AUTH_ENABLED"):
@@ -700,7 +700,7 @@ async def test_creative_brief_update_preserves_review_checkpoint_and_requires_re
 ):
     from httpx import ASGITransport, AsyncClient
 
-    from agents.chapter_candidate import chapter_candidate_source_hash
+    from novel_agent.agents.chapter_candidate import chapter_candidate_source_hash
 
     async def no_issues(self, **kwargs):
         return []
@@ -746,7 +746,7 @@ async def test_creative_brief_update_preserves_review_checkpoint_and_requires_re
             json={"feedback": "approve"},
         )
 
-        monkeypatch.setattr("graph.nodes.ConsistencyCheckerAgent.check", no_issues)
+        monkeypatch.setattr("novel_agent.graph.nodes.ConsistencyCheckerAgent.check", no_issues)
         recheck = await c.post(
             f"/api/novels/{nid}/jobs/resume",
             json={"feedback": "recheck"},
@@ -879,10 +879,10 @@ async def test_completed_book_can_revise_a_final_chapter_and_reaudit(
         revision_model = FakeListChatModel(
             responses=["返修正文。", "返修正文润色。", "[]"],
         )
-        monkeypatch.setattr("agents.scene_writer.get_llm", lambda **kw: revision_model)
-        monkeypatch.setattr("agents.style_editor.get_llm", lambda **kw: revision_model)
+        monkeypatch.setattr("novel_agent.agents.scene_writer.get_llm", lambda **kw: revision_model)
+        monkeypatch.setattr("novel_agent.agents.style_editor.get_llm", lambda **kw: revision_model)
         monkeypatch.setattr(
-            "agents.consistency_checker.get_analyzer_llm",
+            "novel_agent.agents.consistency_checker.get_analyzer_llm",
             lambda **kw: revision_model,
         )
         started = await c.post(
@@ -924,7 +924,7 @@ async def test_digest_failure_returns_retryable_human_review(api_env, fake_llm_7
     """终稿提炼失败通过原有人工审查协议暴露，修复后可再次批准。"""
     from httpx import ASGITransport, AsyncClient
 
-    from graph import nodes
+    from novel_agent.graph import nodes
 
     class FailingDigest:
         async def digest(self, **kwargs):
@@ -949,7 +949,7 @@ async def test_digest_failure_returns_retryable_human_review(api_env, fake_llm_7
         assert (await c.get(f"/api/novels/{nid}/state")).json()["status"] == "human_review"
 
         monkeypatch.setattr(nodes, "ChapterDigestAgent", __import__(
-            "agents.chapter_digest", fromlist=["ChapterDigestAgent"]
+            "novel_agent.agents.chapter_digest", fromlist=["ChapterDigestAgent"]
         ).ChapterDigestAgent)
         recovered = [
             json.loads(line)
@@ -1054,7 +1054,7 @@ async def test_candidate_generation_keeps_checkpoint_untouched_and_selection_rec
         return []
 
     monkeypatch.setattr(server.ChapterCandidateAgent, "generate", fake_candidate)
-    monkeypatch.setattr("graph.nodes.ConsistencyCheckerAgent.check", no_issues)
+    monkeypatch.setattr("novel_agent.graph.nodes.ConsistencyCheckerAgent.check", no_issues)
 
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
         nid = (await c.post("/api/novels", json={
@@ -1250,7 +1250,7 @@ async def test_background_job_can_be_cancelled(api_env, monkeypatch):
     from httpx import ASGITransport, AsyncClient
 
     slow = FakeListChatModel(responses=["```yaml\n世界观名称: 测试\n```"], sleep=1)
-    monkeypatch.setattr("agents.world_builder.get_llm", lambda **kw: slow)
+    monkeypatch.setattr("novel_agent.agents.world_builder.get_llm", lambda **kw: slow)
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
         nid = (await c.post("/api/novels", json={
             "title": "取消任务", "inspiration": "灵感", "total_chapters": 1,
@@ -1306,7 +1306,7 @@ async def test_background_canon_job_returns_to_review(
 
         check_llm = FakeListChatModel(responses=["[]"])
         monkeypatch.setattr(
-            "agents.consistency_checker.get_analyzer_llm",
+            "novel_agent.agents.consistency_checker.get_analyzer_llm",
             lambda **kwargs: check_llm,
         )
         created = await c.post(f"/api/novels/{nid}/jobs/canon", json={
@@ -1433,7 +1433,7 @@ async def test_canon_api_reads_validates_updates_and_rechecks(api_env, fake_llm_
 
         check_llm = FakeListChatModel(responses=["[]"])
         monkeypatch.setattr(
-            "agents.consistency_checker.get_analyzer_llm",
+            "novel_agent.agents.consistency_checker.get_analyzer_llm",
             lambda **kwargs: check_llm,
         )
         lines = [
@@ -1675,7 +1675,7 @@ async def test_model_profile_connection_endpoint_uses_redacted_result(api_env, m
         assert model_name == "gpt-4o"
         return {"ok": True, "latency_ms": 12, "message": "连接成功"}
 
-    monkeypatch.setattr("models.resolver.ModelResolver.test_profile", fake_test)
+    monkeypatch.setattr("novel_agent.models.resolver.ModelResolver.test_profile", fake_test)
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
         profile_id = (await c.post(
             "/api/model-settings/profiles",
@@ -1700,12 +1700,12 @@ async def test_model_profile_connection_endpoint_uses_redacted_result(api_env, m
 async def test_run_rejects_missing_model_configuration_before_stream(api_env, monkeypatch):
     from httpx import ASGITransport, AsyncClient
 
-    from models.resolver import ModelConfigurationError
+    from novel_agent.models.resolver import ModelConfigurationError
 
     def fail_validation(self):
         raise ModelConfigurationError("未配置创作模型")
 
-    monkeypatch.setattr("api.server.ModelResolver.validate_runtime", fail_validation)
+    monkeypatch.setattr("novel_agent.api.server.ModelResolver.validate_runtime", fail_validation)
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
         novel_id = (await c.post(
             "/api/novels",
@@ -1753,7 +1753,7 @@ async def test_resume_rejects_missing_model_configuration_without_advancing_chec
 ):
     from httpx import ASGITransport, AsyncClient
 
-    from models.resolver import ModelConfigurationError
+    from novel_agent.models.resolver import ModelConfigurationError
 
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
         novel_id = (await c.post(
@@ -1765,7 +1765,7 @@ async def test_resume_rejects_missing_model_configuration_without_advancing_chec
         def fail_validation(self):
             raise ModelConfigurationError("未配置分析模型")
 
-        monkeypatch.setattr("api.server.ModelResolver.validate_runtime", fail_validation)
+        monkeypatch.setattr("novel_agent.api.server.ModelResolver.validate_runtime", fail_validation)
         response = await c.post(f"/api/novels/{novel_id}/resume", json={"feedback": "approve"})
         state = await c.get(f"/api/novels/{novel_id}/state")
 
@@ -1819,7 +1819,7 @@ async def test_structured_output_error_preserves_retryable_checkpoint(api_env, m
     from httpx import ASGITransport, AsyncClient
 
     fake = FakeListChatModel(responses=["无效 YAML", "仍然无效"])
-    monkeypatch.setattr("agents.world_builder.get_llm", lambda **kw: fake)
+    monkeypatch.setattr("novel_agent.agents.world_builder.get_llm", lambda **kw: fake)
 
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
         nid = (await c.post("/api/novels", json={
@@ -1838,8 +1838,8 @@ async def test_run_with_feedback_revision(api_env, fake_llm_7, monkeypatch):
     from httpx import ASGITransport, AsyncClient
 
     fake = FakeListChatModel(responses=["重写正文。", "重写润色。", "[]"])
-    for mod, attr in [("agents.scene_writer", "get_llm"), ("agents.style_editor", "get_llm"),
-                      ("agents.consistency_checker", "get_analyzer_llm")]:
+    for mod, attr in [("novel_agent.agents.scene_writer", "get_llm"), ("novel_agent.agents.style_editor", "get_llm"),
+                      ("novel_agent.agents.consistency_checker", "get_analyzer_llm")]:
         monkeypatch.setattr(f"{mod}.{attr}", lambda **kw: fake)
 
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
@@ -1887,8 +1887,8 @@ async def test_scene_scoped_revision_rewrites_selected_scene_and_returns_to_revi
         assert "不存在" in invalid.json()["detail"]
 
         fake = FakeListChatModel(responses=["局部重写后的场景。", "[]"])
-        monkeypatch.setattr("agents.scene_rewriter.get_llm", lambda **kw: fake)
-        monkeypatch.setattr("agents.consistency_checker.get_analyzer_llm", lambda **kw: fake)
+        monkeypatch.setattr("novel_agent.agents.scene_rewriter.get_llm", lambda **kw: fake)
+        monkeypatch.setattr("novel_agent.agents.consistency_checker.get_analyzer_llm", lambda **kw: fake)
         revised = [
             json.loads(line)
             for line in (
@@ -1940,9 +1940,9 @@ async def test_version_history_diff_and_restore_return_to_review(
         await c.post(f"/api/novels/{nid}/run")
 
         fake = FakeListChatModel(responses=["整章重写。", "整章重写润色。", "[]", "[]"])
-        monkeypatch.setattr("agents.scene_writer.get_llm", lambda **kw: fake)
-        monkeypatch.setattr("agents.style_editor.get_llm", lambda **kw: fake)
-        monkeypatch.setattr("agents.consistency_checker.get_analyzer_llm", lambda **kw: fake)
+        monkeypatch.setattr("novel_agent.agents.scene_writer.get_llm", lambda **kw: fake)
+        monkeypatch.setattr("novel_agent.agents.style_editor.get_llm", lambda **kw: fake)
+        monkeypatch.setattr("novel_agent.agents.consistency_checker.get_analyzer_llm", lambda **kw: fake)
         await c.post(f"/api/novels/{nid}/resume", json={"feedback": "重写整章"})
 
         versions = (
@@ -2081,7 +2081,7 @@ async def test_sqlite_finalization_failure_returns_retryable_interrupt(
             return self.delegate.save_progress(**kwargs)
 
     final_store = ToggleStore(api_env.store)
-    monkeypatch.setattr("graph.nodes._store", final_store)
+    monkeypatch.setattr("novel_agent.graph.nodes._store", final_store)
 
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
         nid = (await c.post("/api/novels", json={

@@ -4,9 +4,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from config import Config
-from models.model_settings import ModelSettingsStore
-from models.runtime import (
+from novel_agent.config import Config
+from novel_agent.models.model_settings import ModelSettingsStore
+from novel_agent.models.runtime import (
     ManagedChatModel,
     ModelBudgetExceededError,
     model_call_context,

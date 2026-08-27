@@ -36,8 +36,13 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["agents", "graph", "memory", "tools", "prompts", "models", "api"]
-py-modules = ["config", "security"]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+novel_agent = ["prompts/*.txt"]
 
 # ---------------- Ruff ----------------
 [tool.ruff]
@@ -60,10 +65,11 @@ ignore = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["agents", "graph", "memory", "tools", "prompts", "models", "api", "config"]
+known-first-party = ["novel_agent"]
 
 # ---------------- Pytest ----------------
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 addopts = "-q"
+pythonpath = ["src"]

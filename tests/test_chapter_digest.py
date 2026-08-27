@@ -1,8 +1,8 @@
 import pytest
 from langchain_core.language_models.fake_chat_models import FakeListChatModel
 
-from agents import StructuredOutputError
-from agents.chapter_digest import (
+from novel_agent.agents import StructuredOutputError
+from novel_agent.agents.chapter_digest import (
     DIGEST_VERSION,
     ChapterDigestAgent,
     chapter_content_hash,

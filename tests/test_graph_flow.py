@@ -23,14 +23,14 @@ EXPECTED_NODES = [
 def _patch_llms(monkeypatch, fake_llm) -> None:
     """把全部 Agent 的 LLM 工厂替换为共享假模型。"""
     for mod, attr in [
-        ("agents.world_builder", "get_llm"),
-        ("agents.character_designer", "get_llm"),
-        ("agents.plot_planner", "get_analyzer_llm"),
-        ("agents.scene_planner", "get_analyzer_llm"),
-        ("agents.scene_writer", "get_llm"),
-        ("agents.scene_rewriter", "get_llm"),
-        ("agents.style_editor", "get_llm"),
-        ("agents.consistency_checker", "get_analyzer_llm"),
+        ("novel_agent.agents.world_builder", "get_llm"),
+        ("novel_agent.agents.character_designer", "get_llm"),
+        ("novel_agent.agents.plot_planner", "get_analyzer_llm"),
+        ("novel_agent.agents.scene_planner", "get_analyzer_llm"),
+        ("novel_agent.agents.scene_writer", "get_llm"),
+        ("novel_agent.agents.scene_rewriter", "get_llm"),
+        ("novel_agent.agents.style_editor", "get_llm"),
+        ("novel_agent.agents.consistency_checker", "get_analyzer_llm"),
     ]:
         monkeypatch.setattr(f"{mod}.{attr}", lambda **kw: fake_llm)
 
@@ -62,7 +62,7 @@ async def test_full_flow_with_auto_approve(monkeypatch, fake_llm):
     """1 章全流程:7 次 LLM 调用 + interrupt 暂停 + approve 定稿 → END。"""
     _patch_llms(monkeypatch, fake_llm)
 
-    from graph.builder import build_graph
+    from novel_agent.graph.builder import build_graph
 
     graph = build_graph()
     config = {"configurable": {"thread_id": "t-auto"}}
@@ -101,9 +101,9 @@ async def test_full_flow_with_auto_approve(monkeypatch, fake_llm):
 
 async def test_digest_failure_does_not_finalize_or_advance_chapter(monkeypatch, fake_llm):
     """终稿提炼失败时保留人工审查检查点，不写入部分 Canon 或章节。"""
-    from agents import StructuredOutputError
-    from graph import nodes
-    from graph.builder import build_graph
+    from novel_agent.agents import StructuredOutputError
+    from novel_agent.graph import nodes
+    from novel_agent.graph.builder import build_graph
 
     class FailingDigest:
         async def digest(self, **kwargs):
@@ -124,7 +124,7 @@ async def test_digest_failure_does_not_finalize_or_advance_chapter(monkeypatch, 
     assert snapshot.values["canon"]["timeline"][0]["status"] == "planned"
 
     monkeypatch.setattr(nodes, "ChapterDigestAgent", __import__(
-        "agents.chapter_digest", fromlist=["ChapterDigestAgent"]
+        "novel_agent.agents.chapter_digest", fromlist=["ChapterDigestAgent"]
     ).ChapterDigestAgent)
     await _drive(graph, config, Command(resume="approve"))
     final = await graph.aget_state(config)
@@ -136,7 +136,7 @@ async def test_planning_reviews_pause_before_blueprint_and_prose(monkeypatch, fa
     """启用规划审批时，蓝图与分镜都必须经人工确认后才生成正文。"""
     _patch_llms(monkeypatch, fake_llm)
 
-    from graph.builder import build_graph
+    from novel_agent.graph.builder import build_graph
 
     graph = build_graph()
     config = {"configurable": {"thread_id": "t-planning-review"}}
@@ -196,7 +196,7 @@ async def test_revision_loop_on_human_feedback(monkeypatch):
     fake = FakeListChatModel(responses=responses)
     _patch_llms(monkeypatch, fake)
 
-    from graph.builder import build_graph
+    from novel_agent.graph.builder import build_graph
 
     graph = build_graph()
     config = {"configurable": {"thread_id": "t-revise"}}
@@ -243,7 +243,7 @@ async def test_canon_update_rechecks_current_draft_without_rewriting(monkeypatch
     fake = FakeListChatModel(responses=responses)
     _patch_llms(monkeypatch, fake)
 
-    from graph.builder import build_graph
+    from novel_agent.graph.builder import build_graph
 
     graph = build_graph()
     config = {"configurable": {"thread_id": "t-canon-update"}}
@@ -310,18 +310,18 @@ async def test_narrative_thread_lifecycle_runs_across_two_chapters(monkeypatch):
         "style": FakeListChatModel(responses=[responses[5], responses[9]]),
         "checker": FakeListChatModel(responses=[responses[6], responses[10]]),
     }
-    monkeypatch.setattr("agents.world_builder.get_llm", lambda **kwargs: models["world"])
-    monkeypatch.setattr("agents.character_designer.get_llm", lambda **kwargs: models["character"])
-    monkeypatch.setattr("agents.plot_planner.get_analyzer_llm", lambda **kwargs: models["plot"])
-    monkeypatch.setattr("agents.scene_planner.get_analyzer_llm", lambda **kwargs: models["scene"])
-    monkeypatch.setattr("agents.scene_writer.get_llm", lambda **kwargs: models["writer"])
-    monkeypatch.setattr("agents.style_editor.get_llm", lambda **kwargs: models["style"])
+    monkeypatch.setattr("novel_agent.agents.world_builder.get_llm", lambda **kwargs: models["world"])
+    monkeypatch.setattr("novel_agent.agents.character_designer.get_llm", lambda **kwargs: models["character"])
+    monkeypatch.setattr("novel_agent.agents.plot_planner.get_analyzer_llm", lambda **kwargs: models["plot"])
+    monkeypatch.setattr("novel_agent.agents.scene_planner.get_analyzer_llm", lambda **kwargs: models["scene"])
+    monkeypatch.setattr("novel_agent.agents.scene_writer.get_llm", lambda **kwargs: models["writer"])
+    monkeypatch.setattr("novel_agent.agents.style_editor.get_llm", lambda **kwargs: models["style"])
     monkeypatch.setattr(
-        "agents.consistency_checker.get_analyzer_llm",
+        "novel_agent.agents.consistency_checker.get_analyzer_llm",
         lambda **kwargs: models["checker"],
     )
 
-    from graph.builder import build_graph
+    from novel_agent.graph.builder import build_graph
 
     graph = build_graph()
     config = {"configurable": {"thread_id": "t-thread-lifecycle"}}
@@ -362,7 +362,7 @@ async def test_narrative_thread_lifecycle_runs_across_two_chapters(monkeypatch):
 
 async def test_automatic_revision_count_stops_at_limit(monkeypatch):
     """连续 high 问题只允许配置次数的自动重写,随后转人工审查。"""
-    from graph import nodes
+    from novel_agent.graph import nodes
 
     class AlwaysHighChecker:
         async def check(self, **kwargs):
@@ -401,7 +401,7 @@ async def test_automatic_revision_count_stops_at_limit(monkeypatch):
 
 async def test_quality_gate_rewrites_low_quality_draft_and_escalates_at_limit(monkeypatch):
     """无一致性问题时，低质量稿自动回写；达到上限后交给人工审查。"""
-    from graph import nodes
+    from novel_agent.graph import nodes
 
     class PassingChecker:
         async def check(self, **kwargs):
@@ -433,8 +433,8 @@ async def test_quality_gate_rewrites_low_quality_draft_and_escalates_at_limit(mo
 
 async def test_chapter_vector_memory_is_written_only_after_approval(monkeypatch, fake_llm, store):
     """草稿不进入长期记忆,人工批准后以确定 ID 写入一次终稿。"""
-    from graph import nodes
-    from graph.builder import build_graph
+    from novel_agent.graph import nodes
+    from novel_agent.graph.builder import build_graph
 
     records: list[dict] = []
 
@@ -463,10 +463,10 @@ async def test_chapter_vector_memory_is_written_only_after_approval(monkeypatch,
 
     _patch_llms(monkeypatch, fake_llm)
     for module in [
-        "agents.world_builder",
-        "agents.character_designer",
-        "agents.plot_planner",
-        "agents.scene_writer",
+        "novel_agent.agents.world_builder",
+        "novel_agent.agents.character_designer",
+        "novel_agent.agents.plot_planner",
+        "novel_agent.agents.scene_writer",
     ]:
         monkeypatch.setattr(f"{module}.NovelMemory", RecordingMemory)
     monkeypatch.setattr(nodes, "NovelMemory", RecordingMemory, raising=False)
@@ -504,8 +504,8 @@ async def test_sqlite_failure_prevents_chapter_finalization(
     fake_llm,
 ):
     """权威 SQLite 写入失败时保留可恢复人工审查现场,稍后可重试定稿。"""
-    from graph import nodes
-    from graph.builder import build_graph
+    from novel_agent.graph import nodes
+    from novel_agent.graph.builder import build_graph
 
     digest_calls = 0
     original_digest = nodes.ChapterDigestAgent.digest

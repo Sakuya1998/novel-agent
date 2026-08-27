@@ -7,9 +7,12 @@ from pathlib import Path
 
 import yaml
 
-from config import Config, validate_production_config
-
 ROOT = Path(__file__).resolve().parents[1]
+SRC = ROOT / "src"
+if str(SRC) not in sys.path:
+    sys.path.insert(0, str(SRC))
+
+from novel_agent.config import Config, validate_production_config  # noqa: E402
 
 
 def require(condition: bool, message: str) -> None:
@@ -24,8 +27,9 @@ def main() -> int:
     prometheus = yaml.safe_load((ROOT / "deploy" / "prometheus.yml").read_text(encoding="utf-8"))
     alerts = yaml.safe_load((ROOT / "deploy" / "novel-agent-alerts.yml").read_text(encoding="utf-8"))
 
-    require((ROOT / "security.py").is_file(), "Docker 运行所需的 security.py 不存在")
-    require("COPY config.py main.py security.py ./" in dockerfile, "Dockerfile 未复制顶层运行模块")
+    require((ROOT / "src" / "novel_agent" / "security.py").is_file(), "Docker 运行所需的 security.py 不存在")
+    require("COPY src ./src" in dockerfile, "Dockerfile 未复制 src 应用包")
+    require("novel_agent.api.server:app" in dockerfile, "Dockerfile 未使用打包后的 API 入口")
     require("COPY scripts ./scripts" in dockerfile, "Dockerfile 未复制运行时维护脚本")
     require("USER appuser" in dockerfile, "API 镜像必须使用非 root 用户")
     require("/readyz" in dockerfile, "API healthcheck 必须检查 /readyz")
@@ -34,7 +38,7 @@ def main() -> int:
     # Chroma is intentionally embedded in this application. The dependency
     # audit exceptions are only valid while runtime code does not expose its
     # HTTP server or import the server package.
-    runtime_sources = [ROOT / "main.py", ROOT / "api", ROOT / "memory"]
+    runtime_sources = [ROOT / "src" / "novel_agent"]
     for source in runtime_sources:
         paths = [source] if source.is_file() else sorted(source.rglob("*.py"))
         for path in paths:

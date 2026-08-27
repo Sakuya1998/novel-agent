@@ -6,8 +6,8 @@ from threading import Barrier
 
 import pytest
 
-from config import Config
-from models.model_settings import (
+from novel_agent.config import Config
+from novel_agent.models.model_settings import (
     InvalidModelRouteError,
     ModelSecretError,
     ModelSettingsError,
@@ -130,7 +130,7 @@ def test_routed_embedding_profile_cannot_be_changed_to_anthropic(settings_store)
 def test_concurrent_first_secret_saves_share_one_master_key(settings_store, monkeypatch):
     barrier = Barrier(2)
     original_generate = __import__(
-        "models.model_settings", fromlist=["Fernet"]
+        "novel_agent.models.model_settings", fromlist=["Fernet"]
     ).Fernet.generate_key
 
     def synchronized_generate():
@@ -139,7 +139,7 @@ def test_concurrent_first_secret_saves_share_one_master_key(settings_store, monk
         return key
 
     monkeypatch.setattr(
-        "models.model_settings.Fernet.generate_key",
+        "novel_agent.models.model_settings.Fernet.generate_key",
         synchronized_generate,
     )
     stores = [ModelSettingsStore(settings_store.config), ModelSettingsStore(settings_store.config)]
@@ -340,7 +340,7 @@ def test_legacy_model_metrics_table_is_migrated_for_traces(tmp_path):
 
 
 def test_model_profiles_and_routes_are_tenant_scoped(settings_store):
-    from security import Principal, reset_current_principal, set_current_principal
+    from novel_agent.security import Principal, reset_current_principal, set_current_principal
 
     alice = Principal("user-a", "tenant-a", "alice", "owner")
     bob = Principal("user-b", "tenant-b", "bob", "owner")

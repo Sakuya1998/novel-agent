@@ -7,10 +7,10 @@ import zipfile
 
 import pytest
 
-import tools.import_tools as import_tools
-from tools.export_tools import export_novel_bytes
-from tools.import_tools import parse_import_bytes
-from tools.memory_quality import rebuild_memory_index
+import novel_agent.tools.import_tools as import_tools
+from novel_agent.tools.export_tools import export_novel_bytes
+from novel_agent.tools.import_tools import parse_import_bytes
+from novel_agent.tools.memory_quality import rebuild_memory_index
 
 
 def _novel():

@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 
-from tools.runtime_backup import create_runtime_backup, restore_runtime_backup, verify_runtime_backup
+from novel_agent.tools.runtime_backup import create_runtime_backup, restore_runtime_backup, verify_runtime_backup
 
 
 def main() -> int:

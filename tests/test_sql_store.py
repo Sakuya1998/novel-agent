@@ -5,8 +5,8 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-from config import Config
-from memory.sql_store import NovelStore
+from novel_agent.config import Config
+from novel_agent.memory.sql_store import NovelStore
 
 
 def test_novel_crud(store):
@@ -42,7 +42,7 @@ def test_novel_crud(store):
 
 
 def test_schema_migration_ledger_records_current_versions(store):
-    from models.model_settings import ModelSettingsStore
+    from novel_agent.models.model_settings import ModelSettingsStore
 
     ModelSettingsStore(store.config)
     versions = store.get_schema_versions()
@@ -220,7 +220,7 @@ def test_legacy_novel_table_is_migrated_for_planning_review(tmp_path):
 
 
 def test_novel_queries_are_tenant_scoped(store):
-    from security import Principal, reset_current_principal, set_current_principal
+    from novel_agent.security import Principal, reset_current_principal, set_current_principal
 
     alice_token = set_current_principal(Principal("user-a", "tenant-a", "alice", "owner"))
     try:

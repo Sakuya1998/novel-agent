@@ -5,9 +5,9 @@ from pathlib import Path
 
 import pytest
 
-from config import Config
-from memory.sql_store import NovelStore
-from tools.runtime_backup import create_runtime_backup, restore_runtime_backup, verify_runtime_backup
+from novel_agent.config import Config
+from novel_agent.memory.sql_store import NovelStore
+from novel_agent.tools.runtime_backup import create_runtime_backup, restore_runtime_backup, verify_runtime_backup
 
 
 def _runtime_config(tmp_path):

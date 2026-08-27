@@ -1,9 +1,9 @@
 from langchain_core.language_models.fake_chat_models import FakeListChatModel
 from langchain_core.messages import AIMessage
 
-from agents.book_auditor import BookAuditorAgent
-from graph import nodes
-from tools.book_audit_tools import evaluate_book_deterministic, manuscript_hash
+from novel_agent.agents.book_auditor import BookAuditorAgent
+from novel_agent.graph import nodes
+from novel_agent.tools.book_audit_tools import evaluate_book_deterministic, manuscript_hash
 
 
 def _chapters() -> list[dict]:

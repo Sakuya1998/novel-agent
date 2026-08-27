@@ -1,8 +1,8 @@
 """NovelState 初始化测试。"""
 
-from config import Config
-from graph.nodes import orchestrator_node
-from graph.state import create_initial_state, merge_chapters
+from novel_agent.config import Config
+from novel_agent.graph.nodes import orchestrator_node
+from novel_agent.graph.state import create_initial_state, merge_chapters
 
 
 def test_initial_state_uses_generation_config(tmp_path):

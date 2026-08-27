@@ -2,8 +2,8 @@
 
 from langchain_core.language_models.fake_chat_models import FakeListChatModel
 
-from agents.quality_evaluator import QualityEvaluatorAgent
-from tools.evaluation_tools import (
+from novel_agent.agents.quality_evaluator import QualityEvaluatorAgent
+from novel_agent.tools.evaluation_tools import (
     compare_evaluations,
     evaluate_chapter_deterministic,
     quality_gate_result,

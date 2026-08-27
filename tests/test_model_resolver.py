@@ -2,9 +2,9 @@
 
 import pytest
 
-from config import Config
-from models.model_settings import ModelSettingsStore
-from models.resolver import (
+from novel_agent.config import Config
+from novel_agent.models.model_settings import ModelSettingsStore
+from novel_agent.models.resolver import (
     ModelConfigurationError,
     ModelConnectionError,
     ModelResolver,
@@ -84,7 +84,7 @@ def test_deepseek_route_builds_openai_compatible_chat(resolver_env, monkeypatch)
     )
     captured = {}
     monkeypatch.setattr(
-        "models.resolver.ChatOpenAI",
+        "novel_agent.models.resolver.ChatOpenAI",
         lambda **kwargs: captured.update(kwargs) or object(),
     )
 
@@ -119,7 +119,7 @@ def test_anthropic_route_builds_native_client(resolver_env, monkeypatch):
     )
     captured = {}
     monkeypatch.setattr(
-        "models.resolver.ChatAnthropic",
+        "novel_agent.models.resolver.ChatAnthropic",
         lambda **kwargs: captured.update(kwargs) or object(),
     )
 
@@ -146,7 +146,7 @@ def test_updated_route_does_not_reuse_old_client(resolver_env, monkeypatch):
     )
     built: list[str] = []
     monkeypatch.setattr(
-        "models.resolver.ChatOpenAI",
+        "novel_agent.models.resolver.ChatOpenAI",
         lambda **kwargs: built.append(kwargs["model"]) or object(),
     )
     resolver = ModelResolver(config=cfg, store=store)
@@ -221,7 +221,7 @@ def test_qwen_embedding_uses_selected_base_url(resolver_env, monkeypatch):
     )
     captured = {}
     monkeypatch.setattr(
-        "models.resolver.OpenAIEmbeddings",
+        "novel_agent.models.resolver.OpenAIEmbeddings",
         lambda **kwargs: captured.update(kwargs) or object(),
     )
 
@@ -252,7 +252,7 @@ def test_ollama_profile_runs_without_an_api_key(resolver_env, monkeypatch):
     )
     captured = {}
     monkeypatch.setattr(
-        "models.resolver.ChatOpenAI",
+        "novel_agent.models.resolver.ChatOpenAI",
         lambda **kwargs: captured.update(kwargs) or object(),
     )
 
@@ -343,7 +343,7 @@ async def test_connection_test_sanitizes_authentication_failure(resolver_env, mo
         async def ainvoke(self, prompt):
             raise RuntimeError("401 Unauthorized api_key=key-OpenAI")
 
-    monkeypatch.setattr("models.resolver._build_openai_chat", lambda *args: FailingChat())
+    monkeypatch.setattr("novel_agent.models.resolver._build_openai_chat", lambda *args: FailingChat())
 
     with pytest.raises(ModelConnectionError, match="认证失败") as error:
         await ModelResolver(config=cfg, store=store).test_profile(
@@ -367,7 +367,7 @@ async def test_connection_test_classifies_timeout(resolver_env, monkeypatch):
         async def ainvoke(self, prompt):
             raise TimeoutError("request timed out")
 
-    monkeypatch.setattr("models.resolver._build_openai_chat", lambda *args: FailingChat())
+    monkeypatch.setattr("novel_agent.models.resolver._build_openai_chat", lambda *args: FailingChat())
 
     with pytest.raises(ModelConnectionError, match="连接超时"):
         await ModelResolver(config=cfg, store=store).test_profile(

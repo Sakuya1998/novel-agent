@@ -1,6 +1,11 @@
 """场景正文边界工具测试。"""
 
-from tools.scene_tools import ensure_scene_drafts, format_scene_drafts, join_scene_drafts, segment_scene_content
+from novel_agent.tools.scene_tools import (
+    ensure_scene_drafts,
+    format_scene_drafts,
+    join_scene_drafts,
+    segment_scene_content,
+)
 
 
 def _plan() -> list[dict]:

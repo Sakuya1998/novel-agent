@@ -1,4 +1,4 @@
-from memory.hierarchical import (
+from novel_agent.memory.hierarchical import (
     HIERARCHICAL_MEMORY_SCHEMA_VERSION,
     build_hierarchical_memory,
     format_hierarchical_memory,

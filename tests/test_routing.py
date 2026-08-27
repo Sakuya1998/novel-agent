@@ -2,8 +2,8 @@
 
 import pytest
 
-from agents.orchestrator import OrchestratorAgent
-from graph.edges import route_from_consistency, route_from_human, route_from_orchestrator
+from novel_agent.agents.orchestrator import OrchestratorAgent
+from novel_agent.graph.edges import route_from_consistency, route_from_human, route_from_orchestrator
 
 
 @pytest.fixture

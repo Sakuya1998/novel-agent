@@ -3,7 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
-from config import STYLE_PROFILES, Config, get_style_prompt
+from novel_agent.config import STYLE_PROFILES, Config, get_style_prompt
 
 REQUIRED_KEYS = {"name", "syntax", "sentence_length", "vocabulary", "narrative_techniques", "pacing", "examples"}
 

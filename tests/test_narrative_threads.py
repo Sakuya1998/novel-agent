@@ -1,7 +1,7 @@
 """叙事线程确定性诊断测试。"""
 
-from tools.analysis_tools import build_narrative_thread_diagnostics
-from tools.canon_conflicts import explain_consistency_issues
+from novel_agent.tools.analysis_tools import build_narrative_thread_diagnostics
+from novel_agent.tools.canon_conflicts import explain_consistency_issues
 
 
 def _thread(status="open", due=2, priority="major"):

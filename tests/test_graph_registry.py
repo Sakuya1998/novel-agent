@@ -2,7 +2,7 @@
 
 import gc
 
-from api.server import _novel_locks, get_novel_lock
+from novel_agent.api.server import _novel_locks, get_novel_lock
 
 
 def test_live_novel_lock_is_reused():

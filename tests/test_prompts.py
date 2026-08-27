@@ -2,8 +2,8 @@
 
 import pytest
 
-from agents import parse_json_block, parse_yaml_block
-from prompts import fill_template, get_variables, load_template
+from novel_agent.agents import parse_json_block, parse_yaml_block
+from novel_agent.prompts import fill_template, get_variables, load_template
 
 ALL_TEMPLATES = [
     "world_builder",

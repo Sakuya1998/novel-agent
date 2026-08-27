@@ -1,6 +1,6 @@
 import pytest
 
-from tools.evaluation_benchmark import BENCHMARK_CASES, run_evaluation_benchmark
+from novel_agent.tools.evaluation_benchmark import BENCHMARK_CASES, run_evaluation_benchmark
 
 
 @pytest.mark.asyncio

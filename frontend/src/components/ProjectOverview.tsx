@@ -1,4 +1,4 @@
-import { BookKey, BrainCircuit, Gauge, SlidersHorizontal } from "lucide-react";
+import { Gauge } from "lucide-react";
 import { AGE_RATING_LABELS, POINT_OF_VIEW_LABELS } from "../creativeBrief";
 import type { Novel, WorkbenchState } from "../types";
 
@@ -6,9 +6,6 @@ interface Props {
   novel: Novel;
   state: WorkbenchState;
   statusLabel: string;
-  onOpenBrief: () => void;
-  onOpenCanon: () => void;
-  onOpenMemory: () => void;
 }
 
 function formatTokens(value: number) {
@@ -25,7 +22,7 @@ function styleLabel(style: string) {
   return labels[style] || style || "默认";
 }
 
-export function ProjectOverview({ novel, state, statusLabel, onOpenBrief, onOpenCanon, onOpenMemory }: Props) {
+export function ProjectOverview({ novel, state, statusLabel }: Props) {
   const brief = novel.creative_brief ?? state.creative_brief;
   const progress = state.total_chapters ? Math.min(100, Math.round((state.chapters_done / state.total_chapters) * 100)) : 0;
 
@@ -38,11 +35,6 @@ export function ProjectOverview({ novel, state, statusLabel, onOpenBrief, onOpen
         </div>
         <h1>{novel.title}</h1>
         <p>{novel.inspiration}</p>
-        <div className="project-actions" aria-label="项目工具">
-          <button onClick={onOpenBrief}><SlidersHorizontal size={15} />创作约束</button>
-          <button onClick={onOpenCanon}><BookKey size={15} />设定库</button>
-          <button onClick={onOpenMemory}><BrainCircuit size={15} />长期记忆</button>
-        </div>
       </div>
 
       <div className="progress-summary">

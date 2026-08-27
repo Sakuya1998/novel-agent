@@ -21,6 +21,8 @@ interface Props {
   isStreaming: boolean;
   deletingId?: string;
   serviceStatus?: ServiceStatus;
+  createOpen?: boolean;
+  onCreateOpenChange?: (open: boolean) => void;
   onSelect: (id: string) => void;
   onCreate: (payload: CreateNovelPayload) => Promise<void>;
   onDelete: (novel: Novel) => Promise<void>;
@@ -34,8 +36,8 @@ function splitBriefList(value: string, limit: number): string[] {
     .slice(0, limit);
 }
 
-export function NovelSidebar({ novels, selectedId, isLoading, isStreaming, deletingId, serviceStatus = "checking", onSelect, onCreate, onDelete }: Props) {
-  const [isCreating, setIsCreating] = useState(false);
+export function NovelSidebar({ novels, selectedId, isLoading, isStreaming, deletingId, serviceStatus = "checking", createOpen, onCreateOpenChange, onSelect, onCreate, onDelete }: Props) {
+  const [internalCreating, setInternalCreating] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [createError, setCreateError] = useState("");
   const [title, setTitle] = useState("");
@@ -48,6 +50,11 @@ export function NovelSidebar({ novels, selectedId, isLoading, isStreaming, delet
   const [themes, setThemes] = useState("");
   const [mustInclude, setMustInclude] = useState("");
   const [avoidContent, setAvoidContent] = useState("");
+  const isCreating = createOpen ?? internalCreating;
+  function setIsCreating(open: boolean) {
+    if (createOpen === undefined) setInternalCreating(open);
+    onCreateOpenChange?.(open);
+  }
   const { dialogRef, onBackdropMouseDown } = useDialogLifecycle<HTMLFormElement>(
     isCreating,
     () => { setIsCreating(false); setCreateError(""); },
@@ -165,7 +172,7 @@ export function NovelSidebar({ novels, selectedId, isLoading, isStreaming, delet
         </form>
         </div>
       )}
-      <div className="novel-list" aria-label="作品列表">
+      <div className={`novel-list ${novels.length ? "has-items" : ""}`} aria-label="作品列表">
         {isLoading && <div className="muted-row"><LoaderCircle className="spin" size={15} />加载作品</div>}
         {!isLoading && novels.length === 0 && <div className="empty-sidebar">还没有作品<br /><span>从右上角开始第一部小说</span></div>}
         {novels.map((item) => (

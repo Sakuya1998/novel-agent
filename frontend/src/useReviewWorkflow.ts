@@ -39,6 +39,7 @@ export function useReviewWorkflow({ novelId, chapterNumber, onSubmit }: UseRevie
     review: ReviewSubmission,
     action: ReviewBusyAction,
     replacesDraft: boolean,
+    propagateError = false,
   ) => {
     if (busyActionRef.current) return;
 
@@ -56,6 +57,7 @@ export function useReviewWorkflow({ novelId, chapterNumber, onSubmit }: UseRevie
       }
     } catch (reason) {
       if (scopeVersion === scopeVersionRef.current) setError(submissionError(reason));
+      if (propagateError) throw reason;
     } finally {
       if (scopeVersion === scopeVersionRef.current && busyActionRef.current === action) {
         busyActionRef.current = "";
@@ -80,7 +82,7 @@ export function useReviewWorkflow({ novelId, chapterNumber, onSubmit }: UseRevie
       : review.version_number !== undefined
         ? "restore"
         : "revision";
-    return submit(review, action, true);
+    return submit(review, action, true, true);
   }, [submit]);
 
   return {

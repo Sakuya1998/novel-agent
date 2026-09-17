@@ -19,7 +19,7 @@ import { PlanningReviewPanel } from "./components/PlanningReviewPanel";
 import { PlanningWorkspace } from "./components/PlanningWorkspace";
 import { ProjectOverview } from "./components/ProjectOverview";
 import { QualityWorkspace } from "./components/QualityWorkspace";
-import { ReviewPanel } from "./components/ReviewPanel";
+import { ReviewWorkspace } from "./components/ReviewWorkspace";
 import { RunControlPanel } from "./components/RunControlPanel";
 import { StageRail } from "./components/StageRail";
 import { WorkspaceHeader } from "./components/WorkspaceHeader";
@@ -58,6 +58,7 @@ function App() {
   const [createOpen, setCreateOpen] = useState(false);
   const [authEnabled, setAuthEnabled] = useState<boolean>();
   const [authUser, setAuthUser] = useState<Awaited<ReturnType<typeof getAuthStatus>>["user"]>(null);
+  const [reviewFocus, setReviewFocus] = useState<{ sceneNumber?: number; request: number }>({ request: 0 });
   const { novel, state, error, isStreaming, lastNode } = workbench;
   const creativeBrief = novel?.creative_brief ?? state?.creative_brief;
   const planningReview = state?.status === "blueprint_review" || state?.status === "scene_review";
@@ -160,9 +161,10 @@ function App() {
 
             {workspaceView === "write" ? (
               <section className={`content-grid ${state.status === "human_review" ? "with-review" : ""}`}>
-                <ChapterReader draft={state.current_draft} chapters={novel.chapters || []} status={state.status} />
+                <ChapterReader draft={state.current_draft} chapters={novel.chapters || []} status={state.status} selectedSceneNumber={reviewFocus.sceneNumber} focusRequest={reviewFocus.request} />
                 {state.status === "human_review" ? (
-                  <ReviewPanel
+                  <ReviewWorkspace
+                    novelId={novel.id}
                     draft={state.current_draft}
                     issues={state.issues ?? []}
                     conflicts={state.conflicts ?? []}
@@ -179,6 +181,7 @@ function App() {
                     onEvaluateVersion={workbench.evaluateVersion}
                     onSetEvaluationBaseline={workbench.setEvaluationBaseline}
                     onCompareEvaluations={workbench.compareEvaluations}
+                    onFocusReader={(sceneNumber, request) => setReviewFocus({ sceneNumber, request })}
                   />
                 ) : planningReview ? (
                   <aside className="next-panel review-required-panel"><div className="section-kicker">REVIEW REQUIRED</div><CheckCircle2 size={21} /><h2>规划等待确认</h2><p>批准当前蓝图或分镜后，正文创作才会继续。</p><button className="primary-button full-width" type="button" onClick={() => setWorkspaceView("plan")}>前往审阅<ArrowRight size={15} /></button></aside>

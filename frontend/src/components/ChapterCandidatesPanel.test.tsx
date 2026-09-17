@@ -92,4 +92,17 @@ describe("ChapterCandidatesPanel", () => {
     await click;
     expect(onSelected).toHaveBeenCalledOnce();
   });
+
+  it("reports a rejected adoption without notifying completion", async () => {
+    const failure = new Error("candidate unavailable");
+    const onSelect = vi.fn().mockRejectedValue(failure);
+    const onSelected = vi.fn();
+    const onError = vi.fn();
+    render(<ChapterCandidatesPanel candidates={[candidate]} currentContent="当前稿" disabled={false} onGenerate={vi.fn().mockResolvedValue(undefined)} onSelect={onSelect} onSelected={onSelected} onError={onError} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "采用此稿" }));
+
+    expect(onSelected).not.toHaveBeenCalled();
+    expect(onError).toHaveBeenCalledWith(failure);
+  });
 });

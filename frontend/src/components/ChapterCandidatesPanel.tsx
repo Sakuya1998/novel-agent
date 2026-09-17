@@ -18,9 +18,10 @@ interface Props {
   onGenerate: (count: number, instruction: string) => Promise<void>;
   onSelect: (candidateId: string) => Promise<void>;
   onSelected?: () => void;
+  onError?: (reason: unknown) => void;
 }
 
-export function ChapterCandidatesPanel({ candidates, currentContent, disabled, onGenerate, onSelect, onSelected }: Props) {
+export function ChapterCandidatesPanel({ candidates, currentContent, disabled, onGenerate, onSelect, onSelected, onError }: Props) {
   const [count, setCount] = useState(3);
   const [instruction, setInstruction] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -45,6 +46,8 @@ export function ChapterCandidatesPanel({ candidates, currentContent, disabled, o
     try {
       await onSelect(candidateId);
       onSelected?.();
+    } catch (reason) {
+      onError?.(reason);
     } finally {
       setSelectingId("");
     }

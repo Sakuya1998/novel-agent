@@ -12,6 +12,7 @@ interface Props {
   busyAction: ReviewBusyAction;
   onApplyCanon?: (operation: CanonOperation) => Promise<void>;
   onRepairFeedback?: (feedback: string) => Promise<void>;
+  onError?: (reason: unknown) => void;
 }
 
 function legacyConflicts(issues: ConsistencyIssue[]): ConflictExplanation[] {
@@ -39,18 +40,23 @@ export function ReviewIssuesPanel({
   busyAction,
   onApplyCanon,
   onRepairFeedback,
+  onError,
 }: Props) {
   const [expandedConflict, setExpandedConflict] = useState<string>();
   const displayedConflicts = conflicts.length ? conflicts : legacyConflicts(issues);
   const controlsDisabled = disabled || Boolean(busyAction);
 
   async function applyRepair(option: ConflictExplanation["repair_options"][number]) {
-    if (option.kind === "canon_operation" && option.operation && onApplyCanon) {
-      await onApplyCanon(option.operation);
-      return;
-    }
-    if (option.kind === "revision_feedback" && option.feedback && onRepairFeedback) {
-      await onRepairFeedback(option.feedback);
+    try {
+      if (option.kind === "canon_operation" && option.operation && onApplyCanon) {
+        await onApplyCanon(option.operation);
+        return;
+      }
+      if (option.kind === "revision_feedback" && option.feedback && onRepairFeedback) {
+        await onRepairFeedback(option.feedback);
+      }
+    } catch (reason) {
+      onError?.(reason);
     }
   }
 

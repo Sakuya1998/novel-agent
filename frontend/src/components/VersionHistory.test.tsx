@@ -41,4 +41,17 @@ describe("VersionHistory", () => {
     await click;
     expect(onRestored).toHaveBeenCalledOnce();
   });
+
+  it("reports a rejected restoration without notifying completion", async () => {
+    const failure = new Error("version unavailable");
+    const onRestore = vi.fn().mockRejectedValue(failure);
+    const onRestored = vi.fn();
+    const onError = vi.fn();
+    render(<VersionHistory versions={[{ id: 1, chapter_number: 1, version_number: 1, source: "initial", word_count: 100, preview: "旧", created_at: "2026-08-17" }]} disabled={false} onCompare={vi.fn().mockResolvedValue("")} onRestore={onRestore} onRestored={onRestored} onError={onError} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "恢复 v1" }));
+
+    expect(onRestored).not.toHaveBeenCalled();
+    expect(onError).toHaveBeenCalledWith(failure);
+  });
 });

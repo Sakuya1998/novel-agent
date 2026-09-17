@@ -2,7 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ChapterCandidate, ChapterVersion, ConflictExplanation, Draft, ReviewSubmission, ScenePlanItem } from "../types";
+import type { ChapterCandidate, ChapterEvaluation, ChapterVersion, ConflictExplanation, Draft, ReviewSubmission, ScenePlanItem } from "../types";
 import { ReviewWorkspace } from "./ReviewWorkspace";
 
 afterEach(cleanup);
@@ -144,5 +144,52 @@ describe("ReviewWorkspace", () => {
     expect(screen.getByText("会削弱因果关系")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "按建议返修" }));
     expect(onSubmit).toHaveBeenCalledWith({ feedback: "修正时间线" });
+  });
+
+  it("shows the versions tab and active error when candidate adoption rejects", async () => {
+    const failure = new Error("candidate unavailable");
+    const onSubmit = vi.fn().mockRejectedValue(failure);
+    const onFocusReader = vi.fn();
+    renderWorkspace({ candidates: [candidate], onSubmit, onFocusReader });
+
+    await userEvent.click(screen.getByRole("tab", { name: /候选稿/ }));
+    await userEvent.click(screen.getByRole("button", { name: "采用此稿" }));
+
+    expect(screen.getByRole("alert")).toHaveTextContent("candidate unavailable");
+    expect(screen.getByRole("tabpanel", { name: /候选稿/ })).toBeVisible();
+    expect(onFocusReader).not.toHaveBeenCalled();
+  });
+
+  it("keeps a rejected issue repair on the issues tab and exposes its error", async () => {
+    const failure = new Error("repair unavailable");
+    const onSubmit = vi.fn().mockRejectedValue(failure);
+    renderWorkspace({ conflicts: [conflict], onSubmit });
+
+    await userEvent.click(screen.getByRole("tab", { name: /问题/ }));
+    await userEvent.click(screen.getByRole("button", { name: "查看证据与建议" }));
+    await userEvent.click(screen.getByRole("button", { name: "按建议返修" }));
+
+    expect(screen.getByRole("alert")).toHaveTextContent("repair unavailable");
+    expect(screen.getByRole("tabpanel", { name: /问题/ })).toBeVisible();
+  });
+
+  it("shows versions when evaluation data exists without snapshots", async () => {
+    const evaluation = { version_number: 1, overall_score: 80 } as ChapterEvaluation;
+    renderWorkspace({ evaluations: [evaluation] });
+
+    await userEvent.click(screen.getByRole("tab", { name: /版本/ }));
+    expect(screen.getByText("暂无可用版本")).toBeInTheDocument();
+  });
+
+  it("shows versions when version commands exist without snapshots", async () => {
+    renderWorkspace({ onCompareVersions: vi.fn().mockResolvedValue(""), versions: [] });
+
+    expect(screen.getByRole("tab", { name: /版本/ })).toBeInTheDocument();
+  });
+
+  it("hides versions when neither data nor version commands exist", () => {
+    renderWorkspace({ onGenerateCandidates: undefined, onCompareVersions: undefined, versions: [], evaluations: [] });
+
+    expect(screen.queryByRole("tab", { name: /版本/ })).not.toBeInTheDocument();
   });
 });

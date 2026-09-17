@@ -66,6 +66,7 @@ export function ReviewWorkspace({
   const hasIssues = issues.length > 0 || conflicts.length > 0 || Boolean(qualityReport) || Boolean(persistenceError);
   const hasVersionCommands = Boolean(onCompareVersions || onEvaluateVersion || onSetEvaluationBaseline || onCompareEvaluations);
   const hasVersions = versions.length > 0 || evaluations.length > 0 || hasVersionCommands;
+  const hasEvaluationSurface = versions.length > 0 || evaluations.length > 0;
   const tabs = ([
     { id: "decision" as const, icon: Check },
     ...(hasIssues ? [{ id: "issues" as const, icon: AlertTriangle }] : []),
@@ -76,6 +77,9 @@ export function ReviewWorkspace({
   const activeLabel = TAB_LABELS[activeTab];
   const workspaceError = workflow.error || actionError;
   const compareVersions = onCompareVersions ?? (async () => "");
+  const evaluateVersion = onEvaluateVersion ?? (async () => { throw new Error("章节评测不可用"); });
+  const setEvaluationBaseline = onSetEvaluationBaseline ?? (async () => { throw new Error("设置基准不可用"); });
+  const compareEvaluations = onCompareEvaluations ?? (async () => { throw new Error("回归比较不可用"); });
 
   async function applyCanon(operation: CanonOperation) {
     if (!onApplyCanon) return;
@@ -138,7 +142,7 @@ export function ReviewWorkspace({
           onRestored={returnToDecision}
           onError={(reason) => setActionError(reason instanceof Error ? reason.message : "版本恢复失败")}
         /> : <div className="review-empty-state">暂无可用版本</div>}
-      {onEvaluateVersion && onSetEvaluationBaseline && onCompareEvaluations && versions.length > 0 ? <ChapterEvaluationPanel versions={versions} evaluations={evaluations} disabled={disabled || Boolean(activeBusyAction)} onEvaluate={onEvaluateVersion} onSetBaseline={onSetEvaluationBaseline} onCompare={onCompareEvaluations} /> : null}
+      {hasEvaluationSurface ? <ChapterEvaluationPanel versions={versions} evaluations={evaluations} disabled={disabled || Boolean(activeBusyAction) || !onEvaluateVersion || !onSetEvaluationBaseline || !onCompareEvaluations} onEvaluate={evaluateVersion} onSetBaseline={setEvaluationBaseline} onCompare={compareEvaluations} /> : null}
     </>;
   }
 

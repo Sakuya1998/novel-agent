@@ -174,10 +174,34 @@ describe("ReviewWorkspace", () => {
   });
 
   it("shows versions when evaluation data exists without snapshots", async () => {
-    const evaluation = { version_number: 1, overall_score: 80 } as ChapterEvaluation;
-    renderWorkspace({ evaluations: [evaluation] });
+    const evaluation: ChapterEvaluation = {
+      id: 1,
+      novel_id: "novel-1",
+      chapter_number: 2,
+      version_number: 1,
+      content_hash: "hash",
+      evaluator_version: "rules-1",
+      rubric_version: "rubric-1",
+      model_provider: "",
+      model_name: "",
+      deterministic_scores: { pacing: 80 },
+      judge_scores: {},
+      overall_score: 80,
+      findings: [],
+      judge_error: "",
+      is_baseline: false,
+      created_at: "2026-08-17",
+    };
+    renderWorkspace({
+      evaluations: [evaluation],
+      onEvaluateVersion: vi.fn().mockResolvedValue(evaluation),
+      onSetEvaluationBaseline: vi.fn().mockResolvedValue(evaluation),
+      onCompareEvaluations: vi.fn().mockResolvedValue({ status: "stable", overall_delta: 0 }),
+    });
 
     await userEvent.click(screen.getByRole("tab", { name: /版本/ }));
+    expect(screen.getByText("质量评测")).toBeInTheDocument();
+    expect(screen.getByText("80.0")).toBeInTheDocument();
     expect(screen.getByText("暂无可用版本")).toBeInTheDocument();
   });
 

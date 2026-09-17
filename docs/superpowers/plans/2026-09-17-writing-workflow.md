@@ -382,17 +382,18 @@ git commit -m "feat(frontend): focus manuscript scenes"
 
 **Interfaces:**
 - Consumes: `useReviewWorkflow`, current draft, issues, conflicts, quality report, candidates, versions, and evaluations.
-- Produces: accessible review tabs and a persistent `ReviewDecisionPanel` outside the scrollable tab body.
+- Produces: accessible review tabs and a `ReviewDecisionPanel` that remains visible within the decision tab while its body scrolls.
 - Candidate adoption and version restoration call `workflow.replaceDraft(...)` so successful replacement resets and focuses the reader.
 
 - [ ] **Step 1: Write failing accessible-tab and workflow tests**
 
 ```tsx
-it("switches among issues, candidates, and versions without hiding the decision form", async () => {
+it("switches among decision, issues, candidates, and versions", async () => {
   render(<ReviewWorkspace {...props} />);
   expect(screen.getByRole("textbox", { name: "整章修改意见" })).toBeVisible();
   await userEvent.click(screen.getByRole("tab", { name: /候选稿/ }));
   expect(screen.getByRole("tabpanel", { name: /候选稿/ })).toBeVisible();
+  await userEvent.click(screen.getByRole("tab", { name: /决定/ }));
   expect(screen.getByRole("textbox", { name: "整章修改意见" })).toBeVisible();
 });
 
@@ -421,13 +422,12 @@ Keep existing conflict evidence expansion, canon repair, revision-feedback repai
 <div className="review-tabs" role="tablist" aria-label="章节审稿工具">
   {tabs.map((tab) => <button key={tab.id} role="tab" aria-selected={activeTab === tab.id} aria-controls={`review-${tab.id}`} onClick={() => setActiveTab(tab.id)}>{tab.label}</button>)}
 </div>
-<section id={`review-${activeTab}`} role="tabpanel" aria-label={activeLabel} className="review-tab-panel">
+<section id={`review-${activeTab}`} role="tabpanel" aria-label={activeLabel} className={`review-tab-panel ${activeTab === "decision" ? "has-decision-dock" : ""}`}>
   {activeContent}
 </section>
-<div className="review-decision-dock"><ReviewDecisionPanel {...decisionProps} /></div>
 ```
 
-Tabs are `decision`, `issues`, `candidates`, and `versions`; hide only tabs whose source data and command are both unavailable.
+Tabs are `decision`, `issues`, `candidates`, and `versions`; hide only supporting tabs whose source data and command are both unavailable. The decision tab is always present and renders `ReviewDecisionPanel` in a sticky dock inside that tab.
 
 - [ ] **Step 5: Route candidate and version replacements through the workflow**
 

@@ -52,13 +52,16 @@ export function useRunJob(options: UseRunJobOptions) {
   const abortRef = useRef<AbortController | undefined>(undefined);
   optionsRef.current = options;
 
-  const isCurrent = useCallback((run: ActiveRun, controller: AbortController) => {
+  const isActiveRun = useCallback((run: ActiveRun) => {
     const current = activeRunRef.current;
-    return !controller.signal.aborted
-      && optionsRef.current.selectedId === run.novelId
+    return optionsRef.current.selectedId === run.novelId
       && current?.novelId === run.novelId
       && current.jobId === run.jobId;
   }, []);
+
+  const isCurrent = useCallback((run: ActiveRun, controller: AbortController) => {
+    return !controller.signal.aborted && isActiveRun(run);
+  }, [isActiveRun]);
 
   const poll = useCallback(async (run: ActiveRun) => {
     abortRef.current?.abort();
@@ -150,23 +153,24 @@ export function useRunJob(options: UseRunJobOptions) {
     if (!run || !job || !ACTIVE_JOB_STATUSES.has(job.status)) return;
     try {
       const cancelled = await cancelRunJob(run.jobId);
-      if (optionsRef.current.selectedId !== run.novelId
+      if (!isActiveRun(run)
         || cancelled.id !== run.jobId
         || cancelled.novel_id !== run.novelId) return;
-      abortRef.current?.abort();
       currentJobRef.current = cancelled;
       optionsRef.current.onJobUpdate(run.novelId, cancelled);
+      if (ACTIVE_JOB_STATUSES.has(cancelled.status)) return;
+      abortRef.current?.abort();
       setConnectionStatus("idle");
       await optionsRef.current.onSettled(run.novelId);
     } catch (reason) {
-      if (optionsRef.current.selectedId === run.novelId) {
+      if (isActiveRun(run)) {
         optionsRef.current.onError(
           run.novelId,
           reason instanceof Error ? reason.message : "停止后台任务失败",
         );
       }
     }
-  }, []);
+  }, [isActiveRun]);
 
   const retry = useCallback(() => {
     const run = activeRunRef.current;

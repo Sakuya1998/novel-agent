@@ -45,10 +45,12 @@ function response(job: RunJob, sequence?: number): RunJobEventsResponse {
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((resolvePromise) => {
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
     resolve = resolvePromise;
+    reject = rejectPromise;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
 
 function createOptions(overrides: Partial<UseRunJobOptions> = {}): UseRunJobOptions {
@@ -157,5 +159,89 @@ describe("useRunJob", () => {
     expect(options.onJobUpdate).toHaveBeenCalledWith("novel-1", cancelledJob);
     expect(options.onSettled).toHaveBeenCalledWith("novel-1");
     expect(result.current.connectionStatus).toBe("idle");
+  });
+
+  it("keeps polling when cancellation is only requested on an active job", async () => {
+    const pendingPoll = deferred<RunJobEventsResponse>();
+    const cancellationRequested = { ...runningJob, cancel_requested: true };
+    const cancelledJob = { ...cancellationRequested, status: "cancelled" as const };
+    const options = createOptions({ activeJob: runningJob });
+    vi.mocked(getRunJobEvents).mockReturnValue(pendingPoll.promise);
+    vi.mocked(cancelRunJob).mockResolvedValue(cancellationRequested);
+
+    const { result } = renderHook(() => useRunJob(options));
+    await waitFor(() => expect(getRunJobEvents).toHaveBeenCalled());
+    const pollingSignal = vi.mocked(getRunJobEvents).mock.calls[0][2]!;
+
+    await act(() => result.current.cancelJob());
+
+    expect(pollingSignal.aborted).toBe(false);
+    expect(options.onJobUpdate).toHaveBeenCalledWith("novel-1", cancellationRequested);
+    expect(options.onSettled).not.toHaveBeenCalled();
+    expect(result.current.connectionStatus).toBe("polling");
+
+    pendingPoll.resolve(response(cancelledJob));
+    await waitFor(() => expect(result.current.connectionStatus).toBe("idle"));
+    expect(options.onSettled).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores a delayed cancellation response after another job replaces it", async () => {
+    const firstPoll = deferred<RunJobEventsResponse>();
+    const secondPoll = deferred<RunJobEventsResponse>();
+    const pendingCancellation = deferred<RunJob>();
+    const replacementJob = { ...runningJob, id: "job-2" };
+    const cancelledJob = { ...runningJob, status: "cancelled" as const };
+    const options = createOptions({ activeJob: runningJob });
+    vi.mocked(getRunJobEvents)
+      .mockReturnValueOnce(firstPoll.promise)
+      .mockReturnValueOnce(secondPoll.promise);
+    vi.mocked(cancelRunJob).mockReturnValue(pendingCancellation.promise);
+
+    const { result } = renderHook(() => useRunJob(options));
+    await waitFor(() => expect(getRunJobEvents).toHaveBeenCalledTimes(1));
+    const cancellation = result.current.cancelJob();
+
+    await act(() => result.current.startJob("novel-1", async () => replacementJob));
+    await waitFor(() => expect(getRunJobEvents).toHaveBeenCalledTimes(2));
+    const replacementSignal = vi.mocked(getRunJobEvents).mock.calls[1][2]!;
+
+    pendingCancellation.resolve(cancelledJob);
+    await act(() => cancellation);
+
+    expect(replacementSignal.aborted).toBe(false);
+    expect(options.onJobUpdate).not.toHaveBeenCalledWith("novel-1", cancelledJob);
+    expect(options.onSettled).not.toHaveBeenCalled();
+    expect(result.current.connectionStatus).toBe("polling");
+
+    secondPoll.resolve(response({ ...replacementJob, status: "completed" }));
+    await waitFor(() => expect(result.current.connectionStatus).toBe("idle"));
+  });
+
+  it("ignores a delayed cancellation failure after another job replaces it", async () => {
+    const firstPoll = deferred<RunJobEventsResponse>();
+    const secondPoll = deferred<RunJobEventsResponse>();
+    const pendingCancellation = deferred<RunJob>();
+    const replacementJob = { ...runningJob, id: "job-2" };
+    const options = createOptions({ activeJob: runningJob });
+    vi.mocked(getRunJobEvents)
+      .mockReturnValueOnce(firstPoll.promise)
+      .mockReturnValueOnce(secondPoll.promise);
+    vi.mocked(cancelRunJob).mockReturnValue(pendingCancellation.promise);
+
+    const { result } = renderHook(() => useRunJob(options));
+    await waitFor(() => expect(getRunJobEvents).toHaveBeenCalledTimes(1));
+    const cancellation = result.current.cancelJob();
+
+    await act(() => result.current.startJob("novel-1", async () => replacementJob));
+    await waitFor(() => expect(getRunJobEvents).toHaveBeenCalledTimes(2));
+
+    pendingCancellation.reject(new Error("stale cancellation failure"));
+    await act(() => cancellation);
+
+    expect(options.onError).not.toHaveBeenCalled();
+    expect(result.current.connectionStatus).toBe("polling");
+
+    secondPoll.resolve(response({ ...replacementJob, status: "completed" }));
+    await waitFor(() => expect(result.current.connectionStatus).toBe("idle"));
   });
 });

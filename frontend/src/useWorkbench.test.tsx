@@ -122,6 +122,16 @@ describe("useWorkbench background jobs", () => {
     api.getNovel.mockResolvedValue(novel);
   });
 
+  it("exposes persisted job connection recovery controls", async () => {
+    api.getNovelState.mockResolvedValue(state("idle", null));
+
+    const { result } = renderHook(() => useWorkbench());
+
+    await waitFor(() => expect(result.current.state?.status).toBe("idle"));
+    expect(result.current.connectionStatus).toBe("idle");
+    expect(result.current.retryRunConnection).toEqual(expect.any(Function));
+  });
+
   it("reconnects to an active persisted job after loading the project", async () => {
     api.getNovelState
       .mockResolvedValueOnce(state("running", job("running")))

@@ -4,6 +4,15 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Novel, WorkbenchState } from "../types";
 import { WritingWorkspace } from "./WritingWorkspace";
+import App from "../App";
+import { useWorkbench } from "../useWorkbench";
+
+vi.mock("../useWorkbench", () => ({ useWorkbench: vi.fn() }));
+vi.mock("../useServiceStatus", () => ({ useServiceStatus: () => "ready" }));
+vi.mock("../api", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../api")>(),
+  getAuthStatus: vi.fn().mockResolvedValue({ enabled: false, user: null }),
+}));
 
 const originalScrollIntoView = Object.getOwnPropertyDescriptor(Element.prototype, "scrollIntoView");
 
@@ -83,6 +92,7 @@ const props = {
   connectionStatus: "idle" as const,
   lastNode: undefined,
   isStreaming: false,
+  onReaderFocusChange: vi.fn(),
   onRun: vi.fn(),
   onCancel: vi.fn(),
   onRetry: vi.fn(),
@@ -94,6 +104,86 @@ const props = {
   onSetEvaluationBaseline: vi.fn().mockResolvedValue(undefined),
   onCompareEvaluations: vi.fn().mockResolvedValue(undefined),
 };
+
+const restorationState: WorkbenchState = {
+  ...baseState,
+  current_draft: {
+    ...baseState.current_draft,
+    scene_plan: [{ scene_number: 2, goal: "摆脱追兵", conflict: "道路封锁", turn: "进入暗巷", location: "长街", characters: ["林寒"], emotion: "急迫", estimated_words: 600 }],
+    scene_drafts: [{ scene_number: 2, content: "第二场正文" }],
+  },
+  versions: [{ id: 1, chapter_number: 2, version_number: 1, source: "initial", word_count: 10, preview: "初稿", created_at: "2026-09-17" }],
+};
+
+function mockWorkbench(selectedNovel = novel, state = restorationState) {
+  vi.mocked(useWorkbench).mockReturnValue({
+    novels: [novel, { ...novel, id: "novel-2", title: "另一部作品" }],
+    novel: selectedNovel, state, selectedId: selectedNovel.id,
+    creativeBriefVersions: [], modelTraces: [], evaluationBenchmarks: [], memoryQuality: { latest: null, runs: [] },
+    lastNode: undefined, error: "", isLoading: false, connectionStatus: "idle", isStreaming: false, deletingId: undefined,
+    setSelectedId: vi.fn(), run: props.onRun, resume: props.onSubmit, cancelJob: props.onCancel,
+    retryRunConnection: props.onRetry, generateCandidates: props.onGenerateCandidates,
+    updateCanon: props.onApplyCanon, compareVersions: props.onCompareVersions,
+    evaluateVersion: props.onEvaluateVersion, setEvaluationBaseline: props.onSetEvaluationBaseline,
+    compareEvaluations: props.onCompareEvaluations, startBookRevision: vi.fn(), updateBrief: vi.fn(),
+    loadModelTraces: vi.fn(), loadEvaluationBenchmarks: vi.fn(), runBenchmark: vi.fn(),
+    loadMemoryQuality: vi.fn(), runMemoryQuality: vi.fn(), rebuildMemoryIndex: vi.fn(),
+    exportNovel: vi.fn(), importNovel: vi.fn(), loadPlanningVersion: vi.fn(), comparePlanningVersions: vi.fn(),
+    addNovel: vi.fn(), removeNovel: vi.fn(),
+  });
+}
+
+describe("App writing navigation", () => {
+  it.each(["设定", "质量", "规划"])("preserves reader focus after leaving for %s and returning", async (destination) => {
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(Element.prototype, "scrollIntoView", { configurable: true, value: scrollIntoView });
+    mockWorkbench();
+    render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: /第 2 场/ }));
+    await userEvent.click(screen.getByRole("tab", { name: "版本" }));
+    await userEvent.click(screen.getByRole("button", { name: "恢复 v1" }));
+    expect(screen.getByTestId("scene-2")).toHaveAttribute("aria-current", "true");
+
+    await userEvent.click(screen.getByRole("tab", { name: destination }));
+    expect(screen.queryByTestId("scene-2")).not.toBeInTheDocument();
+    scrollIntoView.mockClear();
+    await userEvent.click(screen.getByRole("tab", { name: "写作" }));
+
+    expect(screen.getByTestId("scene-2")).toHaveAttribute("aria-current", "true");
+    expect(scrollIntoView).toHaveBeenCalledOnce();
+    expect(scrollIntoView.mock.instances[0]).toBe(screen.getByTestId("scene-2"));
+
+    scrollIntoView.mockClear();
+    await userEvent.click(screen.getByRole("button", { name: /第 2 场/ }));
+    await userEvent.click(screen.getByRole("tab", { name: "版本" }));
+    await userEvent.click(screen.getByRole("button", { name: "恢复 v1" }));
+    expect(scrollIntoView).toHaveBeenCalledOnce();
+    expect(scrollIntoView.mock.instances[0]).toBe(screen.getByTestId("scene-2"));
+  });
+
+  it.each(["novel", "chapter"])("does not apply saved reader focus to a different %s", async (scope) => {
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(Element.prototype, "scrollIntoView", { configurable: true, value: scrollIntoView });
+    mockWorkbench();
+    const view = render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: /第 2 场/ }));
+    await userEvent.click(screen.getByRole("tab", { name: "版本" }));
+    await userEvent.click(screen.getByRole("button", { name: "恢复 v1" }));
+    expect(screen.getByTestId("scene-2")).toHaveAttribute("aria-current", "true");
+    await userEvent.click(screen.getByRole("tab", { name: "设定" }));
+
+    const nextNovel = scope === "novel" ? { ...novel, id: "novel-2" } : novel;
+    mockWorkbench(nextNovel, { ...restorationState, novel_id: nextNovel.id,
+      current_draft: { ...restorationState.current_draft, chapter_number: scope === "chapter" ? 3 : 2 },
+    });
+    scrollIntoView.mockClear();
+    view.rerender(<App />);
+    await userEvent.click(screen.getByRole("tab", { name: "写作" }));
+
+    expect(screen.getByTestId("scene-2")).not.toHaveAttribute("aria-current");
+    expect(scrollIntoView).not.toHaveBeenCalled();
+  });
+});
 
 describe("WritingWorkspace", () => {
   it("shows reader, status, and review workspace during human review", () => {
@@ -115,16 +205,8 @@ describe("WritingWorkspace", () => {
   it("focuses and scrolls the selected reader scene after restoring a version", async () => {
     const scrollIntoView = vi.fn();
     Object.defineProperty(Element.prototype, "scrollIntoView", { configurable: true, value: scrollIntoView });
-    const state: WorkbenchState = {
-      ...baseState,
-      current_draft: {
-        ...baseState.current_draft,
-        scene_plan: [{ scene_number: 2, goal: "摆脱追兵", conflict: "道路封锁", turn: "进入暗巷", location: "长街", characters: ["林寒"], emotion: "急迫", estimated_words: 600 }],
-        scene_drafts: [{ scene_number: 2, content: "第二场正文" }],
-      },
-      versions: [{ id: 1, chapter_number: 2, version_number: 1, source: "initial", word_count: 10, preview: "初稿", created_at: "2026-09-17" }],
-    };
-    render(<WritingWorkspace {...props} state={state} />);
+    mockWorkbench();
+    render(<App />);
 
     await userEvent.click(screen.getByRole("button", { name: /第 2 场/ }));
     await userEvent.click(screen.getByRole("tab", { name: /版本/ }));

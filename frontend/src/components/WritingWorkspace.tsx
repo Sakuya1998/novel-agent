@@ -1,10 +1,16 @@
 import { ArrowRight, CheckCircle2 } from "lucide-react";
-import { useState } from "react";
 import type { CanonOperation, ChapterEvaluation, EvaluationComparison, Novel, ReviewSubmission, WorkbenchState } from "../types";
 import type { RunConnectionStatus } from "../useRunJob";
 import { ChapterReader } from "./ChapterReader";
 import { ReviewWorkspace } from "./ReviewWorkspace";
 import { WritingStatusBar } from "./WritingStatusBar";
+
+export interface WritingReaderFocus {
+  novelId: string;
+  chapterNumber?: number;
+  sceneNumber?: number;
+  request: number;
+}
 
 interface WritingWorkspaceProps {
   novel: Novel;
@@ -12,6 +18,8 @@ interface WritingWorkspaceProps {
   connectionStatus: RunConnectionStatus;
   lastNode?: string;
   isStreaming: boolean;
+  readerFocus?: WritingReaderFocus;
+  onReaderFocusChange: (focus: WritingReaderFocus) => void;
   onRun: () => void | Promise<void>;
   onCancel: () => void | Promise<void>;
   onRetry: () => void;
@@ -64,6 +72,8 @@ export function WritingWorkspace({
   connectionStatus,
   lastNode,
   isStreaming,
+  readerFocus,
+  onReaderFocusChange,
   onRun,
   onCancel,
   onRetry,
@@ -77,7 +87,6 @@ export function WritingWorkspace({
   onOpenPlanning,
   onOpenQuality,
 }: WritingWorkspaceProps) {
-  const [readerFocus, setReaderFocus] = useState<{ novelId: string; chapterNumber?: number; sceneNumber?: number; request: number }>();
   const currentFocus = readerFocus?.novelId === novel.id && readerFocus?.chapterNumber === state.current_draft.chapter_number
     ? readerFocus : undefined;
   const disabled = state.status !== "running" && isStreaming;
@@ -121,7 +130,7 @@ export function WritingWorkspace({
         onEvaluateVersion={onEvaluateVersion}
         onSetEvaluationBaseline={onSetEvaluationBaseline}
         onCompareEvaluations={onCompareEvaluations}
-        onFocusReader={(sceneNumber, request) => setReaderFocus({ novelId: novel.id, chapterNumber: state.current_draft.chapter_number, sceneNumber, request })}
+        onFocusReader={(sceneNumber) => onReaderFocusChange({ novelId: novel.id, chapterNumber: state.current_draft.chapter_number, sceneNumber, request: (readerFocus?.request ?? 0) + 1 })}
       /> : <WritingNextAction state={state} onOpenPlanning={onOpenPlanning} onOpenQuality={onOpenQuality} />}
     </div>
   </section>;

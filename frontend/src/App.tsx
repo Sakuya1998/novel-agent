@@ -18,7 +18,7 @@ import { PlanningReviewPanel } from "./components/PlanningReviewPanel";
 import { PlanningWorkspace } from "./components/PlanningWorkspace";
 import { ProjectOverview } from "./components/ProjectOverview";
 import { QualityWorkspace } from "./components/QualityWorkspace";
-import { WritingWorkspace } from "./components/WritingWorkspace";
+import { WritingWorkspace, type WritingReaderFocus } from "./components/WritingWorkspace";
 import { StageRail } from "./components/StageRail";
 import { WorkspaceHeader } from "./components/WorkspaceHeader";
 import { WorkspaceNav, type WorkspaceView } from "./components/WorkspaceNav";
@@ -53,6 +53,7 @@ function App() {
   const serviceStatus = useServiceStatus();
   const [activeDialog, setActiveDialog] = useState<DialogName>();
   const [workspaceView, setWorkspaceView] = useState<WorkspaceView>("write");
+  const [readerFocus, setReaderFocus] = useState<WritingReaderFocus>();
   const [createOpen, setCreateOpen] = useState(false);
   const [authEnabled, setAuthEnabled] = useState<boolean>();
   const [authUser, setAuthUser] = useState<Awaited<ReturnType<typeof getAuthStatus>>["user"]>(null);
@@ -159,6 +160,8 @@ function App() {
             {workspaceView === "write" ? <WritingWorkspace
               novel={novel}
               state={state}
+              readerFocus={readerFocus}
+              onReaderFocusChange={setReaderFocus}
               connectionStatus={workbench.connectionStatus}
               lastNode={lastNode}
               isStreaming={isStreaming}

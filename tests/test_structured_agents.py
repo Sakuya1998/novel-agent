@@ -177,6 +177,42 @@ async def test_scene_planner_rejects_missing_narrative_beat_assignment():
         })
 
 
+async def test_scene_planner_retry_receives_exact_beat_mismatch():
+    incomplete = (
+        "- scene_number: 1\n"
+        "  goal: 发现印盒\n  conflict: 守卫阻拦\n  turn: 印盒为空\n"
+        "  location: 王库\n  characters: [林寒]\n  emotion: 惊疑\n  estimated_words: 100\n"
+    )
+    corrected = (
+        f"{incomplete}"
+        "  narrative_beats:\n"
+        "    - thread: 失踪王印\n      action: setup\n      description: 发现空印盒\n"
+    )
+
+    class CorrectsFromDetailedMismatch:
+        async def ainvoke(self, prompt):
+            content = corrected if "实际分配=[]" in prompt else incomplete
+            return AIMessage(content=content)
+
+    agent = ScenePlannerAgent(llm=CorrectsFromDetailedMismatch())
+
+    scenes = await agent.plan_chapter({
+        "current_chapter": 1,
+        "chapter_plan": {
+            "chapter": 1,
+            "estimated_words": 100,
+            "narrative_beats": [{
+                "thread": "失踪王印",
+                "action": "setup",
+                "description": "发现空印盒",
+            }],
+        },
+        "max_chapter_words": 100,
+    })
+
+    assert scenes[0]["narrative_beats"][0]["thread"] == "失踪王印"
+
+
 def test_scene_budget_keeps_every_scene_executable_when_target_is_tiny():
     scenes = [
         {"scene_number": 1, "estimated_words": 2},

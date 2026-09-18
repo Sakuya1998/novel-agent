@@ -112,7 +112,10 @@ def validate_scene_plan(
                 raise ValueError("场景 narrative beat 必须是对象")
             assigned_beats.append(_beat_key(beat))
     if sorted(assigned_beats) != sorted(expected_beats):
-        raise ValueError("章节 narrative_beats 必须各自分配到且只分配到一个场景")
+        raise ValueError(
+            "章节 narrative_beats 必须各自分配到且只分配到一个场景; "
+            f"期望分配={expected_beats!r}; 实际分配={assigned_beats!r}"
+        )
 
 
 def normalize_scene_plan(
@@ -170,4 +173,3 @@ class ScenePlannerAgent:
             format_name="YAML",
         )
         return normalize_scene_plan(scenes, chapter_plan, int(state.get("max_chapter_words") or 6000))
-

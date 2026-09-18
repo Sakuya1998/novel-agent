@@ -93,6 +93,34 @@ def test_deepseek_route_builds_openai_compatible_chat(resolver_env, monkeypatch)
     assert captured["model"] == "deepseek-chat"
     assert captured["base_url"] == "https://api.deepseek.com"
     assert captured["api_key"] == "key-DeepSeek"
+    assert "extra_body" not in captured
+
+
+def test_qwen3_chat_disables_thinking_to_preserve_final_content(resolver_env, monkeypatch):
+    cfg, store = resolver_env
+    qwen = add_profile(
+        store,
+        name="Qwen",
+        provider="qwen",
+        base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+        chat_model="qwen3.8-max",
+        embedding_model="text-embedding-v3",
+    )
+    save_routes(
+        store,
+        creative=(qwen["id"], "qwen3.8-max"),
+        analysis=(qwen["id"], "qwen3.8-max"),
+        embedding=(qwen["id"], "text-embedding-v3"),
+    )
+    captured = {}
+    monkeypatch.setattr(
+        "novel_agent.models.resolver.ChatOpenAI",
+        lambda **kwargs: captured.update(kwargs) or object(),
+    )
+
+    ModelResolver(config=cfg, store=store).chat("creative")
+
+    assert captured["extra_body"] == {"enable_thinking": False}
 
 
 def test_anthropic_route_builds_native_client(resolver_env, monkeypatch):
@@ -203,7 +231,7 @@ def test_chat_route_resolves_explicit_fallback(resolver_env):
     assert [item.provider for item in candidates] == ["openai", "anthropic"]
 
 
-def test_qwen_embedding_uses_selected_base_url(resolver_env, monkeypatch):
+def test_qwen_embedding_uses_raw_string_inputs(resolver_env, monkeypatch):
     cfg, store = resolver_env
     qwen = add_profile(
         store,
@@ -231,7 +259,35 @@ def test_qwen_embedding_uses_selected_base_url(resolver_env, monkeypatch):
         "model": "text-embedding-v3",
         "api_key": "key-Qwen",
         "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "check_embedding_ctx_length": False,
     }
+
+
+def test_openai_embedding_preserves_default_context_length_check(resolver_env, monkeypatch):
+    cfg, store = resolver_env
+    openai = add_profile(
+        store,
+        name="OpenAI",
+        provider="openai",
+        base_url="https://api.openai.com/v1",
+        chat_model="gpt-4o",
+        embedding_model="text-embedding-3-small",
+    )
+    save_routes(
+        store,
+        creative=(openai["id"], "gpt-4o"),
+        analysis=(openai["id"], "gpt-4o"),
+        embedding=(openai["id"], "text-embedding-3-small"),
+    )
+    captured = {}
+    monkeypatch.setattr(
+        "novel_agent.models.resolver.OpenAIEmbeddings",
+        lambda **kwargs: captured.update(kwargs) or object(),
+    )
+
+    ModelResolver(config=cfg, store=store).embeddings()
+
+    assert "check_embedding_ctx_length" not in captured
 
 
 def test_ollama_profile_runs_without_an_api_key(resolver_env, monkeypatch):

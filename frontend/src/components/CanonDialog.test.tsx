@@ -55,4 +55,31 @@ describe("CanonDialog", () => {
     expect(screen.getByRole("button", { name: "新增" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "编辑 世界.城市" })).toBeDisabled();
   });
+
+  it("renders structured psychology fields as readable text in the character list", async () => {
+    apiMocks.getNovelCanon.mockResolvedValueOnce({
+      ...canon,
+      characters: {
+        林寒: {
+          ...canon.characters.林寒,
+          personality: {
+            core_desire: "找回记忆",
+            core_fear: "真相",
+            inner_conflict: "相信他人还是独自调查",
+            trauma: "童年失踪",
+          },
+        },
+      },
+    } as never);
+
+    const user = userEvent.setup();
+    render(<CanonDialog open novelId="novel_1" editable={false} disabled={false} onClose={() => undefined} onSubmit={vi.fn()} />);
+    await screen.findByText("世界.城市");
+    await user.click(screen.getByRole("tab", { name: "角色与别名" }));
+
+    expect(await screen.findByText(/core_desire：找回记忆/)).toBeInTheDocument();
+    expect(screen.getByText(/core_fear：真相/)).toBeInTheDocument();
+    expect(screen.getByText(/inner_conflict：相信他人还是独自调查/)).toBeInTheDocument();
+    expect(screen.getByText(/trauma：童年失踪/)).toBeInTheDocument();
+  });
 });

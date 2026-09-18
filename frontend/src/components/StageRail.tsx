@@ -11,12 +11,14 @@ export function StageRail({ lastNode, status, currentPhase }: Props) {
     { label: "审校定稿", detail: "一致性、人工审查与终审", stages: ["consistency_checker", "human_review", "book_auditor"] },
   ];
   const statusNode = status.endsWith("_review") ? status : "";
-  const activeIndex = Math.max(
-    STAGES.findIndex((stage) => stage.id === statusNode),
-    STAGES.findIndex((stage) => stage.id === lastNode),
-    STAGES.findIndex((stage) => stage.id === currentPhase),
-    0,
-  );
+  const activeIndex = status === "completed"
+    ? STAGES.findIndex((stage) => stage.id === "book_auditor")
+    : Math.max(
+      STAGES.findIndex((stage) => stage.id === statusNode),
+      STAGES.findIndex((stage) => stage.id === lastNode),
+      STAGES.findIndex((stage) => stage.id === currentPhase),
+      0,
+    );
   const activeNode = STAGES[activeIndex]?.label ?? "准备中";
 
   return (

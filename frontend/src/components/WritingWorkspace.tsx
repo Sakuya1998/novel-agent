@@ -1,5 +1,6 @@
 import { ArrowRight, CheckCircle2 } from "lucide-react";
-import type { CanonOperation, ChapterEvaluation, EvaluationComparison, Novel, ReviewSubmission, WorkbenchState } from "../types";
+import type { CanonOperation, ChapterEvaluation, EvaluationComparison, Novel, WorkbenchState } from "../types";
+import type { ReviewWorkflow } from "../useReviewWorkflow";
 import type { RunConnectionStatus } from "../useRunJob";
 import { ChapterReader } from "./ChapterReader";
 import { ReviewWorkspace } from "./ReviewWorkspace";
@@ -9,6 +10,7 @@ export interface WritingReaderFocus {
   novelId: string;
   chapterNumber?: number;
   sceneNumber?: number;
+  target?: "scene" | "top";
   request: number;
 }
 
@@ -23,7 +25,7 @@ interface WritingWorkspaceProps {
   onRun: () => void | Promise<void>;
   onCancel: () => void | Promise<void>;
   onRetry: () => void;
-  onSubmit: (review: ReviewSubmission) => Promise<void>;
+  reviewWorkflow: ReviewWorkflow;
   onApplyCanon?: (operation: CanonOperation) => Promise<void>;
   onGenerateCandidates?: (count: number, instruction: string) => Promise<void>;
   onCompareVersions?: (fromVersion: number, toVersion: number) => Promise<string>;
@@ -77,7 +79,7 @@ export function WritingWorkspace({
   onRun,
   onCancel,
   onRetry,
-  onSubmit,
+  reviewWorkflow,
   onApplyCanon,
   onGenerateCandidates,
   onCompareVersions,
@@ -111,9 +113,10 @@ export function WritingWorkspace({
         status={state.status}
         selectedSceneNumber={currentFocus?.sceneNumber}
         focusRequest={currentFocus?.request}
+        focusTarget={currentFocus?.target}
       />
       {state.status === "human_review" ? <ReviewWorkspace
-        novelId={novel.id}
+        workflow={reviewWorkflow}
         draft={state.current_draft}
         issues={state.issues ?? []}
         conflicts={state.conflicts ?? []}
@@ -123,14 +126,13 @@ export function WritingWorkspace({
         evaluations={state.evaluations ?? []}
         candidates={state.chapter_candidates ?? []}
         disabled={isStreaming}
-        onSubmit={onSubmit}
         onApplyCanon={onApplyCanon}
         onGenerateCandidates={onGenerateCandidates}
         onCompareVersions={onCompareVersions}
         onEvaluateVersion={onEvaluateVersion}
         onSetEvaluationBaseline={onSetEvaluationBaseline}
         onCompareEvaluations={onCompareEvaluations}
-        onFocusReader={(sceneNumber) => onReaderFocusChange({ novelId: novel.id, chapterNumber: state.current_draft.chapter_number, sceneNumber, request: (readerFocus?.request ?? 0) + 1 })}
+        onFocusReader={(sceneNumber) => onReaderFocusChange({ novelId: novel.id, chapterNumber: state.current_draft.chapter_number, sceneNumber, target: sceneNumber === undefined ? "top" : "scene", request: (readerFocus?.request ?? 0) + 1 })}
       /> : <WritingNextAction state={state} onOpenPlanning={onOpenPlanning} onOpenQuality={onOpenQuality} />}
     </div>
   </section>;

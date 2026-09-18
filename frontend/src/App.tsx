@@ -1,5 +1,5 @@
 import { AlertCircle, GitBranch } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { getAuthStatus, loginAuth, logoutAuth, registerAuth } from "./api";
 import { AuthDialog } from "./components/AuthDialog";
 import { BookAuditPanel } from "./components/BookAuditPanel";
@@ -24,6 +24,8 @@ import { WorkspaceHeader } from "./components/WorkspaceHeader";
 import { WorkspaceNav, type WorkspaceView } from "./components/WorkspaceNav";
 import { useServiceStatus } from "./useServiceStatus";
 import { useWorkbench } from "./useWorkbench";
+import { useReviewWorkflow } from "./useReviewWorkflow";
+import type { CanonOperation } from "./types";
 import "./book-audit.css";
 
 type DialogName = "settings" | "canon" | "brief" | "traces" | "benchmarks" | "auth" | "memory" | "transfer" | "monitoring";
@@ -58,6 +60,15 @@ function App() {
   const [authEnabled, setAuthEnabled] = useState<boolean>();
   const [authUser, setAuthUser] = useState<Awaited<ReturnType<typeof getAuthStatus>>["user"]>(null);
   const { novel, state, error, isStreaming, lastNode } = workbench;
+  const reviewWorkflow = useReviewWorkflow({
+    novelId: workbench.selectedId ?? "",
+    chapterNumber: state?.current_draft.chapter_number ?? 0,
+    onSubmit: workbench.resume,
+  });
+  const { runAction } = reviewWorkflow;
+  const { updateCanon } = workbench;
+  const applyCanon = useCallback((operation: CanonOperation) =>
+    runAction("canon", () => updateCanon(operation), undefined, true), [runAction, updateCanon]);
   const creativeBrief = novel?.creative_brief ?? state?.creative_brief;
   const planningReview = state?.status === "blueprint_review" || state?.status === "scene_review";
 
@@ -168,7 +179,7 @@ function App() {
               onRun={workbench.run}
               onCancel={workbench.cancelJob}
               onRetry={workbench.retryRunConnection}
-              onSubmit={workbench.resume}
+              reviewWorkflow={reviewWorkflow}
               onApplyCanon={workbench.updateCanon}
               onGenerateCandidates={workbench.generateCandidates}
               onCompareVersions={workbench.compareVersions}
@@ -182,7 +193,7 @@ function App() {
         )}
       </main>
 
-      <CanonDialog open={activeDialog === "canon"} novelId={workbench.selectedId} editable={state?.status === "human_review"} disabled={isStreaming} currentChapter={state?.current_chapter} scenePlan={state?.current_draft.scene_plan} onClose={() => setActiveDialog(undefined)} onSubmit={workbench.updateCanon} />
+      <CanonDialog open={activeDialog === "canon"} novelId={workbench.selectedId} editable={state?.status === "human_review"} disabled={isStreaming || Boolean(reviewWorkflow.busyAction)} currentChapter={state?.current_chapter} scenePlan={state?.current_draft.scene_plan} onClose={() => setActiveDialog(undefined)} onSubmit={applyCanon} />
       <CreativeBriefDialog open={activeDialog === "brief"} brief={creativeBrief} version={novel?.creative_brief_version ?? state?.creative_brief_version} versions={workbench.creativeBriefVersions} disabled={isStreaming} onClose={() => setActiveDialog(undefined)} onSubmit={workbench.updateBrief} />
       <ModelTraceDialog open={activeDialog === "traces"} traces={workbench.modelTraces} onRefresh={workbench.loadModelTraces} onClose={() => setActiveDialog(undefined)} />
       <EvaluationBenchmarkDialog open={activeDialog === "benchmarks"} runs={workbench.evaluationBenchmarks} onRun={workbench.runBenchmark} onClose={() => setActiveDialog(undefined)} />

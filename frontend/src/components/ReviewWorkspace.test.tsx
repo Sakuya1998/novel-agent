@@ -1,9 +1,10 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ChapterCandidate, ChapterEvaluation, ChapterVersion, ConflictExplanation, Draft, ReviewSubmission, ScenePlanItem } from "../types";
 import { ReviewWorkspace } from "./ReviewWorkspace";
+import { useReviewWorkflow } from "../useReviewWorkflow";
 
 afterEach(cleanup);
 
@@ -58,9 +59,19 @@ const conflict: ConflictExplanation = {
   repair_options: [{ id: "repair-1", label: "按建议返修", kind: "revision_feedback", feedback: "修正时间线" }],
 };
 
-function renderWorkspace(overrides: Partial<React.ComponentProps<typeof ReviewWorkspace>> = {}) {
+type HarnessProps = Omit<React.ComponentProps<typeof ReviewWorkspace>, "workflow"> & {
+  novelId: string;
+  onSubmit: (review: ReviewSubmission) => Promise<void>;
+};
+
+function ReviewHarness({ novelId, onSubmit, ...props }: HarnessProps) {
+  const workflow = useReviewWorkflow({ novelId, chapterNumber: props.draft.chapter_number ?? 0, onSubmit });
+  return <ReviewWorkspace {...props} workflow={workflow} />;
+}
+
+function renderWorkspace(overrides: Partial<HarnessProps> = {}) {
   const onSubmit = vi.fn<(review: ReviewSubmission) => Promise<void>>().mockResolvedValue(undefined);
-  const props: React.ComponentProps<typeof ReviewWorkspace> = {
+  const props: HarnessProps = {
     novelId: "novel-1",
     draft,
     issues: [],
@@ -71,11 +82,96 @@ function renderWorkspace(overrides: Partial<React.ComponentProps<typeof ReviewWo
     onCompareVersions: vi.fn().mockResolvedValue(""),
     ...overrides,
   };
-  render(<ReviewWorkspace {...props} />);
-  return { props, onSubmit };
+  const view = render(<ReviewHarness {...props} />);
+  return { props, onSubmit, view };
 }
 
 describe("ReviewWorkspace", () => {
+  it("uses roving tab focus with arrows, Home, End, and wraparound", async () => {
+    renderWorkspace({ conflicts: [conflict], versions: [version] });
+    const tabs = screen.getAllByRole("tab");
+    expect(tabs.map((tab) => tab.tabIndex)).toEqual([0, -1, -1, -1]);
+    tabs[0].focus();
+    await userEvent.keyboard("{ArrowRight}");
+    expect(tabs[1]).toHaveFocus();
+    expect(tabs[1]).toHaveAttribute("aria-selected", "true");
+    expect(tabs.map((tab) => tab.tabIndex)).toEqual([-1, 0, -1, -1]);
+    await userEvent.keyboard("{End}");
+    expect(tabs[3]).toHaveFocus();
+    await userEvent.keyboard("{ArrowRight}");
+    expect(tabs[0]).toHaveFocus();
+    await userEvent.keyboard("{ArrowLeft}");
+    expect(tabs[3]).toHaveFocus();
+    await userEvent.keyboard("{Home}");
+    expect(tabs[0]).toHaveFocus();
+    expect(screen.getByRole("tabpanel", { name: "决定" })).toBeVisible();
+  });
+
+  it("focuses the selected reader scene and clears it when returning to whole chapter", async () => {
+    const onFocusReader = vi.fn();
+    renderWorkspace({ onFocusReader });
+    await userEvent.click(screen.getByRole("button", { name: /第 2 场/ }));
+    expect(onFocusReader).toHaveBeenLastCalledWith(2, expect.any(Number));
+    await userEvent.click(screen.getByRole("button", { name: "整章修改" }));
+    expect(onFocusReader).toHaveBeenLastCalledWith(undefined, expect.any(Number));
+  });
+
+  it("hides candidate generation when only candidate data is available", async () => {
+    renderWorkspace({ candidates: [candidate], onGenerateCandidates: undefined });
+    await userEvent.click(screen.getByRole("tab", { name: "候选稿" }));
+    expect(screen.queryByRole("button", { name: "生成候选稿" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "候选稿创作方向" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "采用此稿" })).toBeEnabled();
+  });
+
+  it("keeps all conflicting commands locked across tab switches during candidate creation", async () => {
+    let resolve!: () => void;
+    const pending = new Promise<void>((done) => { resolve = done; });
+    const onGenerateCandidates = vi.fn().mockReturnValue(pending);
+    const onApplyCanon = vi.fn().mockResolvedValue(undefined);
+    const { onSubmit } = renderWorkspace({ candidates: [candidate], versions: [version], conflicts: [conflict], onGenerateCandidates, onApplyCanon });
+    await userEvent.type(screen.getByRole("textbox", { name: "整章修改意见" }), "Revise");
+    await userEvent.click(screen.getByRole("tab", { name: "候选稿" }));
+    await userEvent.click(screen.getByRole("button", { name: "生成候选稿" }));
+    await userEvent.click(screen.getByRole("tab", { name: "决定" }));
+    expect(screen.getByRole("button", { name: "重写整章" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "通过定稿" })).toBeDisabled();
+    await userEvent.click(screen.getByRole("button", { name: "通过定稿" }));
+    expect(onSubmit).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("tab", { name: "版本" }));
+    expect(screen.getByRole("button", { name: "恢复 v1" })).toBeDisabled();
+    await userEvent.click(screen.getByRole("tab", { name: "问题" }));
+    await userEvent.click(screen.getByRole("button", { name: "查看证据与建议" }));
+    expect(screen.getByRole("button", { name: "按建议返修" })).toBeDisabled();
+    await userEvent.click(screen.getByRole("tab", { name: "候选稿" }));
+    expect(screen.getByRole("button", { name: "生成候选稿" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "采用此稿" })).toBeDisabled();
+    await act(async () => { resolve(); await pending; });
+    await userEvent.click(screen.getByRole("tab", { name: "决定" }));
+    expect(screen.getByRole("button", { name: "通过定稿" })).toBeEnabled();
+    expect(screen.getByRole("textbox", { name: "整章修改意见" })).toHaveValue("Revise");
+    expect(onGenerateCandidates).toHaveBeenCalledOnce();
+  });
+
+  it("ignores a replacement completion from the previous chapter without stealing its focus or feedback", async () => {
+    let resolve!: () => void;
+    const pending = new Promise<void>((done) => { resolve = done; });
+    const onFocusReader = vi.fn();
+    const { props, view } = renderWorkspace({ candidates: [candidate], onSubmit: vi.fn().mockReturnValue(pending), onFocusReader });
+    await userEvent.click(screen.getByRole("tab", { name: "候选稿" }));
+    await userEvent.click(screen.getByRole("button", { name: "采用此稿" }));
+    view.rerender(<ReviewHarness {...props} draft={{ ...draft, chapter_number: 3 }} />);
+    await userEvent.click(screen.getByRole("button", { name: /第 2 场/ }));
+    await userEvent.type(screen.getByRole("textbox", { name: "第 2 场修改意见" }), "New chapter notes");
+    await userEvent.click(screen.getByRole("tab", { name: "候选稿" }));
+    onFocusReader.mockClear();
+    await act(async () => { resolve(); await pending; });
+    expect(screen.getByRole("tabpanel", { name: "候选稿" })).toBeVisible();
+    expect(onFocusReader).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("tab", { name: "决定" }));
+    expect(screen.getByRole("textbox", { name: "第 2 场修改意见" })).toHaveValue("New chapter notes");
+  });
+
   it("switches among decision, issues, candidates, and versions", async () => {
     renderWorkspace({
       issues: [{ type: "consistency", description: "时间线冲突", severity: "high" }],
@@ -115,7 +211,7 @@ describe("ReviewWorkspace", () => {
 
     expect(onSubmit).toHaveBeenCalledWith({ feedback: "candidate", candidate_id: "candidate-1" });
     expect(screen.getByRole("textbox", { name: "整章修改意见" })).toBeVisible();
-    expect(onFocusReader).toHaveBeenCalledWith(2, 1);
+    expect(onFocusReader).toHaveBeenLastCalledWith(undefined, expect.any(Number));
   });
 
   it("returns to the decision tab after a version is restored", async () => {
@@ -128,7 +224,7 @@ describe("ReviewWorkspace", () => {
 
     expect(onSubmit).toHaveBeenCalledWith({ feedback: "restore", version_number: 1 });
     expect(screen.getByRole("textbox", { name: "整章修改意见" })).toBeVisible();
-    expect(onFocusReader).toHaveBeenCalledWith(2, 1);
+    expect(onFocusReader).toHaveBeenLastCalledWith(undefined, expect.any(Number));
   });
 
   it("preserves conflict evidence, repair actions, and quality gate in the issues tab", async () => {

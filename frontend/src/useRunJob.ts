@@ -50,11 +50,13 @@ export function useRunJob(options: UseRunJobOptions) {
   const currentJobRef = useRef<RunJob | null>(null);
   const sequenceRef = useRef(0);
   const abortRef = useRef<AbortController | undefined>(undefined);
+  const startGenerationRef = useRef(0);
+  const mountedRef = useRef(true);
   optionsRef.current = options;
 
   const isActiveRun = useCallback((run: ActiveRun) => {
     const current = activeRunRef.current;
-    return optionsRef.current.selectedId === run.novelId
+    return mountedRef.current && optionsRef.current.selectedId === run.novelId
       && current?.novelId === run.novelId
       && current.jobId === run.jobId;
   }, []);
@@ -141,8 +143,10 @@ export function useRunJob(options: UseRunJobOptions) {
   }, [poll]);
 
   const startJob = useCallback(async (novelId: string, createJob: () => Promise<RunJob>) => {
+    const generation = ++startGenerationRef.current;
     const job = await createJob();
-    if (optionsRef.current.selectedId !== novelId || job.novel_id !== novelId) return;
+    if (!mountedRef.current || generation !== startGenerationRef.current
+      || optionsRef.current.selectedId !== novelId || job.novel_id !== novelId) return;
     optionsRef.current.onJobUpdate(novelId, job);
     beginPolling(novelId, job, true);
   }, [beginPolling]);
@@ -180,6 +184,15 @@ export function useRunJob(options: UseRunJobOptions) {
   }, [connectionStatus, poll]);
 
   useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      startGenerationRef.current += 1;
+      abortRef.current?.abort();
+    };
+  }, [options.selectedId]);
+
+  useEffect(() => {
     const current = activeRunRef.current;
     if (current && current.novelId !== options.selectedId) {
       abortRef.current?.abort();
@@ -195,8 +208,6 @@ export function useRunJob(options: UseRunJobOptions) {
       beginPolling(options.selectedId, job, true);
     }
   }, [beginPolling, options.activeJob?.id, options.activeJob?.status, options.selectedId]);
-
-  useEffect(() => () => abortRef.current?.abort(), []);
 
   return {
     connectionStatus,

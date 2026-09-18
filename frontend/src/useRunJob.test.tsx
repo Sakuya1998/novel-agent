@@ -74,6 +74,56 @@ describe("useRunJob", () => {
     vi.useRealTimers();
   });
 
+  it("ignores an older create response after a newer start for the same novel", async () => {
+    const first = deferred<RunJob>();
+    const second = deferred<RunJob>();
+    const options = createOptions();
+    const newerJob = { ...runningJob, id: "job-2" };
+    vi.mocked(getRunJobEvents).mockReturnValue(new Promise(() => undefined));
+    const { result } = renderHook(() => useRunJob(options));
+    const firstStart = result.current.startJob("novel-1", () => first.promise);
+    const secondStart = result.current.startJob("novel-1", () => second.promise);
+
+    await act(async () => { second.resolve(newerJob); await secondStart; });
+    await act(async () => { first.resolve(runningJob); await firstStart; });
+
+    expect(options.onJobUpdate).toHaveBeenCalledExactlyOnceWith("novel-1", newerJob);
+    expect(getRunJobEvents).toHaveBeenCalledExactlyOnceWith("job-2", 0, expect.any(AbortSignal));
+    expect(vi.mocked(getRunJobEvents).mock.calls[0][2]?.aborted).toBe(false);
+  });
+
+  it("does not apply a pending create response after unmount", async () => {
+    const pending = deferred<RunJob>();
+    const options = createOptions();
+    vi.mocked(getRunJobEvents).mockResolvedValue(response(completedJob, 1));
+    const { result, unmount } = renderHook(() => useRunJob(options));
+    const start = result.current.startJob("novel-1", () => pending.promise);
+    unmount();
+    await act(async () => { pending.resolve(runningJob); await start; });
+
+    expect(getRunJobEvents).not.toHaveBeenCalled();
+    expect(options.onJobUpdate).not.toHaveBeenCalled();
+    expect(options.onEvent).not.toHaveBeenCalled();
+    expect(options.onSettled).not.toHaveBeenCalled();
+  });
+
+  it("invalidates a pending start even after switching back to its novel", async () => {
+    const pending = deferred<RunJob>();
+    const options = createOptions();
+    vi.mocked(getRunJobEvents).mockResolvedValue(response(completedJob));
+    const { result, rerender } = renderHook(
+      ({ selectedId }) => useRunJob({ ...options, selectedId }),
+      { initialProps: { selectedId: "novel-1" } },
+    );
+    const start = result.current.startJob("novel-1", () => pending.promise);
+    rerender({ selectedId: "novel-2" });
+    rerender({ selectedId: "novel-1" });
+    await act(async () => { pending.resolve(runningJob); await start; });
+
+    expect(getRunJobEvents).not.toHaveBeenCalled();
+    expect(options.onJobUpdate).not.toHaveBeenCalled();
+  });
+
   it("reconnects after a transient polling failure without losing the event sequence", async () => {
     const options = createOptions();
     vi.mocked(getRunJobEvents)

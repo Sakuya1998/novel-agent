@@ -23,6 +23,7 @@ export function PlanningReviewPanel({ reviewNode, worldBible, characters, outlin
   const [outlineRows, setOutlineRows] = useState(outline);
   const [sceneRows, setSceneRows] = useState(scenePlan);
   const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
   const [historyBusy, setHistoryBusy] = useState(false);
   const [fromVersion, setFromVersion] = useState(0);
   const [toVersion, setToVersion] = useState(0);
@@ -73,6 +74,7 @@ export function PlanningReviewPanel({ reviewNode, worldBible, characters, outlin
   }
 
   async function approve() {
+    setSubmitError("");
     setSubmitting(true);
     try {
       if (reviewNode === "blueprint_review") {
@@ -80,6 +82,8 @@ export function PlanningReviewPanel({ reviewNode, worldBible, characters, outlin
       } else {
         await onSubmit({ review_type: reviewNode, scene_plan: sceneRows });
       }
+    } catch (reason) {
+      setSubmitError(reason instanceof Error ? reason.message : "规划提交失败");
     } finally {
       setSubmitting(false);
     }
@@ -122,6 +126,7 @@ export function PlanningReviewPanel({ reviewNode, worldBible, characters, outlin
       </header>
 
       <div className="planning-review-body">
+        {submitError ? <div className="error-callout" role="alert">{submitError}</div> : null}
         {reviewNode === "blueprint_review" ? <>
           <section className="planning-editor-section">
             <div className="section-heading"><strong>世界观圣经</strong></div>

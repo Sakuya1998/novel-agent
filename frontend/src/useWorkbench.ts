@@ -293,6 +293,7 @@ export function useWorkbench() {
         setError(err instanceof Error ? err.message : "恢复创作失败");
         await refreshSelected(id).catch(() => undefined);
       }
+      throw err;
     }
   }, [refreshSelected, selectedId, startJob]);
 

@@ -7,6 +7,15 @@ import { PlanningReviewPanel } from "./PlanningReviewPanel";
 afterEach(cleanup);
 
 describe("PlanningReviewPanel", () => {
+  it("keeps planning edits and exposes a rejected resume command", async () => {
+    render(<PlanningReviewPanel reviewNode="blueprint_review" worldBible="" characters={[]} outline={[]} scenePlan={[]} disabled={false} onSubmit={vi.fn().mockRejectedValue(new Error("resume unavailable"))} />);
+    await userEvent.type(screen.getByRole("textbox", { name: "世界观圣经" }), "Keep this world");
+    await userEvent.click(screen.getByRole("button", { name: "批准并继续" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("resume unavailable");
+    expect(screen.getByRole("textbox", { name: "世界观圣经" })).toHaveValue("Keep this world");
+    expect(screen.getByRole("button", { name: "批准并继续" })).toBeEnabled();
+  });
+
   it("edits and submits the blueprint as structured data", async () => {
     const onSubmit = vi.fn().mockResolvedValue(undefined);
     render(<PlanningReviewPanel

@@ -63,6 +63,19 @@ describe("ChapterReader", () => {
     />);
 
     expect(scrollIntoView).toHaveBeenCalledWith({ behavior: "smooth", block: "start" });
+    expect(scrollIntoView).toHaveBeenCalledOnce();
+    expect(scrollIntoView.mock.instances[0]).toBe(screen.getByTestId("scene-2"));
+  });
+
+  it("focuses manuscript top on an explicit top request", () => {
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(Element.prototype, "scrollIntoView", { configurable: true, value: scrollIntoView });
+    const view = render(<ChapterReader draft={draftWithScenes} chapters={[]} status="human_review" selectedSceneNumber={2} focusRequest={0} />);
+    view.rerender(<ChapterReader draft={draftWithScenes} chapters={[]} status="human_review" focusTarget="top" focusRequest={1} />);
+    expect(screen.getByRole("article")).toHaveFocus();
+    expect(screen.getByTestId("scene-2")).not.toHaveAttribute("aria-current");
+    expect(scrollIntoView).toHaveBeenCalledExactlyOnceWith({ behavior: "smooth", block: "start" });
+    expect(scrollIntoView.mock.instances[0]).toBe(screen.getByRole("article"));
   });
 
   it("keeps rendering aggregate content when scene drafts are absent", () => {

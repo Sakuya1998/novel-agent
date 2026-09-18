@@ -1,9 +1,10 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Novel, WorkbenchState } from "../types";
-import { WritingWorkspace } from "./WritingWorkspace";
+import type { Novel, ReviewSubmission, WorkbenchState } from "../types";
+import { WritingWorkspace as WritingWorkspaceView } from "./WritingWorkspace";
+import { useReviewWorkflow } from "../useReviewWorkflow";
 import App from "../App";
 import { useWorkbench } from "../useWorkbench";
 
@@ -12,9 +13,17 @@ vi.mock("../useServiceStatus", () => ({ useServiceStatus: () => "ready" }));
 vi.mock("../api", async (importOriginal) => ({
   ...await importOriginal<typeof import("../api")>(),
   getAuthStatus: vi.fn().mockResolvedValue({ enabled: false, user: null }),
+  getNovelCanon: vi.fn().mockResolvedValue({ version: 1, world_facts: [], characters: {}, aliases: {}, timeline: [], facts: [], narrative_threads: [], audit: [] }),
 }));
 
 const originalScrollIntoView = Object.getOwnPropertyDescriptor(Element.prototype, "scrollIntoView");
+
+function WritingWorkspace({ onSubmit, ...props }: Omit<React.ComponentProps<typeof WritingWorkspaceView>, "reviewWorkflow"> & {
+  onSubmit: (review: ReviewSubmission) => Promise<void>;
+}) {
+  const reviewWorkflow = useReviewWorkflow({ novelId: props.novel.id, chapterNumber: props.state.current_draft.chapter_number ?? 0, onSubmit });
+  return <WritingWorkspaceView {...props} reviewWorkflow={reviewWorkflow} />;
+}
 
 afterEach(() => {
   cleanup();
@@ -134,15 +143,51 @@ function mockWorkbench(selectedNovel = novel, state = restorationState) {
 }
 
 describe("App writing navigation", () => {
-  it.each(["设定", "质量", "规划"])("preserves reader focus after leaving for %s and returning", async (destination) => {
+  it("keeps the canon dialog locked while candidate creation is pending after navigation", async () => {
+    let resolve!: () => void;
+    const pending = new Promise<void>((done) => { resolve = done; });
+    props.onGenerateCandidates.mockReturnValueOnce(pending);
+    mockWorkbench();
+    render(<App />);
+    await userEvent.click(screen.getByRole("tab", { name: "候选稿" }));
+    await userEvent.click(screen.getByRole("button", { name: "生成候选稿" }));
+    await userEvent.click(screen.getByRole("tab", { name: "设定" }));
+    await userEvent.click(screen.getByRole("button", { name: /事实与叙事线程/ }));
+    expect(await screen.findByRole("button", { name: "新增" })).toBeDisabled();
+    await act(async () => { resolve(); await pending; });
+    expect(screen.getByRole("button", { name: "新增" })).toBeEnabled();
+  });
+
+  it("keeps review decisions locked while a canon dialog command is pending", async () => {
+    let resolve!: () => void;
+    const pending = new Promise<void>((done) => { resolve = done; });
+    props.onApplyCanon.mockReturnValueOnce(pending);
+    mockWorkbench();
+    render(<App />);
+    await userEvent.click(screen.getByRole("tab", { name: "设定" }));
+    await userEvent.click(screen.getByRole("button", { name: /事实与叙事线程/ }));
+    await userEvent.click(await screen.findByRole("button", { name: "新增" }));
+    await userEvent.type(screen.getByRole("textbox", { name: "事实路径" }), "city");
+    await userEvent.type(screen.getByRole("textbox", { name: "事实内容" }), "Fog");
+    await userEvent.type(screen.getByRole("textbox", { name: "变更原因" }), "Consistency");
+    await userEvent.click(screen.getByRole("button", { name: "保存事实" }));
+    await userEvent.click(screen.getByRole("button", { name: "关闭 Canon" }));
+    await userEvent.click(screen.getByRole("tab", { name: "写作" }));
+    expect(screen.getByRole("button", { name: "通过定稿" })).toBeDisabled();
+    await act(async () => { resolve(); await pending; });
+    expect(screen.getByRole("button", { name: "通过定稿" })).toBeEnabled();
+  });
+
+  it.each(["设定", "质量", "规划"])("preserves feedback, scope, and reader focus after leaving for %s and returning", async (destination) => {
     const scrollIntoView = vi.fn();
     Object.defineProperty(Element.prototype, "scrollIntoView", { configurable: true, value: scrollIntoView });
     mockWorkbench();
     render(<App />);
     await userEvent.click(screen.getByRole("button", { name: /第 2 场/ }));
-    await userEvent.click(screen.getByRole("tab", { name: "版本" }));
-    await userEvent.click(screen.getByRole("button", { name: "恢复 v1" }));
+    await userEvent.type(screen.getByRole("textbox", { name: "第 2 场修改意见" }), "Keep these notes");
     expect(screen.getByTestId("scene-2")).toHaveAttribute("aria-current", "true");
+    expect(screen.getByRole("textbox", { name: "第 2 场修改意见" })).toHaveValue("Keep these notes");
+    expect(screen.getByRole("button", { name: /第 2 场/ })).toHaveAttribute("aria-pressed", "true");
 
     await userEvent.click(screen.getByRole("tab", { name: destination }));
     expect(screen.queryByTestId("scene-2")).not.toBeInTheDocument();
@@ -150,15 +195,17 @@ describe("App writing navigation", () => {
     await userEvent.click(screen.getByRole("tab", { name: "写作" }));
 
     expect(screen.getByTestId("scene-2")).toHaveAttribute("aria-current", "true");
+    expect(screen.getByRole("textbox", { name: "第 2 场修改意见" })).toHaveValue("Keep these notes");
+    expect(screen.getByRole("button", { name: /第 2 场/ })).toHaveAttribute("aria-pressed", "true");
     expect(scrollIntoView).toHaveBeenCalledOnce();
     expect(scrollIntoView.mock.instances[0]).toBe(screen.getByTestId("scene-2"));
 
     scrollIntoView.mockClear();
-    await userEvent.click(screen.getByRole("button", { name: /第 2 场/ }));
-    await userEvent.click(screen.getByRole("tab", { name: "版本" }));
-    await userEvent.click(screen.getByRole("button", { name: "恢复 v1" }));
+    await userEvent.click(screen.getByRole("button", { name: "整章修改" }));
+    expect(screen.getByTestId("scene-2")).not.toHaveAttribute("aria-current");
+    expect(screen.getByRole("textbox", { name: "整章修改意见" })).toHaveValue("Keep these notes");
     expect(scrollIntoView).toHaveBeenCalledOnce();
-    expect(scrollIntoView.mock.instances[0]).toBe(screen.getByTestId("scene-2"));
+    expect(scrollIntoView.mock.instances[0]).toBe(screen.getByRole("article"));
   });
 
   it.each(["novel", "chapter"])("does not apply saved reader focus to a different %s", async (scope) => {
@@ -167,8 +214,7 @@ describe("App writing navigation", () => {
     mockWorkbench();
     const view = render(<App />);
     await userEvent.click(screen.getByRole("button", { name: /第 2 场/ }));
-    await userEvent.click(screen.getByRole("tab", { name: "版本" }));
-    await userEvent.click(screen.getByRole("button", { name: "恢复 v1" }));
+    await userEvent.type(screen.getByRole("textbox", { name: "第 2 场修改意见" }), "Old notes");
     expect(screen.getByTestId("scene-2")).toHaveAttribute("aria-current", "true");
     await userEvent.click(screen.getByRole("tab", { name: "设定" }));
 
@@ -181,6 +227,8 @@ describe("App writing navigation", () => {
     await userEvent.click(screen.getByRole("tab", { name: "写作" }));
 
     expect(screen.getByTestId("scene-2")).not.toHaveAttribute("aria-current");
+    expect(screen.getByRole("textbox", { name: "整章修改意见" })).toHaveValue("");
+    expect(screen.getByRole("button", { name: "整章修改" })).toHaveAttribute("aria-pressed", "true");
     expect(scrollIntoView).not.toHaveBeenCalled();
   });
 });
@@ -202,20 +250,23 @@ describe("WritingWorkspace", () => {
     expect(onOpenPlanning).toHaveBeenCalledOnce();
   });
 
-  it("focuses and scrolls the selected reader scene after restoring a version", async () => {
+  it("focuses manuscript top and clears the scene highlight after restoring a version", async () => {
     const scrollIntoView = vi.fn();
     Object.defineProperty(Element.prototype, "scrollIntoView", { configurable: true, value: scrollIntoView });
     mockWorkbench();
     render(<App />);
 
     await userEvent.click(screen.getByRole("button", { name: /第 2 场/ }));
+    scrollIntoView.mockClear();
     await userEvent.click(screen.getByRole("tab", { name: /版本/ }));
     await userEvent.click(screen.getByRole("button", { name: "恢复 v1" }));
 
     expect(props.onSubmit).toHaveBeenCalledWith({ feedback: "restore", version_number: 1 });
-    expect(screen.getByTestId("scene-2")).toHaveAttribute("aria-current", "true");
+    expect(screen.getByTestId("scene-2")).not.toHaveAttribute("aria-current");
+    expect(screen.getByRole("article")).toHaveFocus();
+    expect(scrollIntoView).toHaveBeenCalledOnce();
     expect(scrollIntoView).toHaveBeenCalledWith({ behavior: "smooth", block: "start" });
-    expect(scrollIntoView.mock.instances[0]).toBe(screen.getByTestId("scene-2"));
+    expect(scrollIntoView.mock.instances[0]).toBe(screen.getByRole("article"));
   });
 
   it("keeps stop available while streaming and connects run and retry commands", async () => {

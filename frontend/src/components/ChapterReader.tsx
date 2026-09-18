@@ -8,6 +8,7 @@ interface Props {
   status: string;
   selectedSceneNumber?: number;
   focusRequest?: number;
+  focusTarget?: "scene" | "top";
 }
 
 export function ChapterReader({
@@ -16,20 +17,24 @@ export function ChapterReader({
   status,
   selectedSceneNumber,
   focusRequest = 0,
+  focusTarget = "scene",
 }: Props) {
+  const manuscriptRef = useRef<HTMLElement>(null);
   const sceneRefs = useRef(new Map<number, HTMLElement>());
   const hasSceneDrafts = Boolean(draft.scene_drafts?.length);
   const hasDraft = hasSceneDrafts || Boolean(draft.content);
 
   useEffect(() => {
-    if (focusRequest > 0 && selectedSceneNumber) {
-      sceneRefs.current.get(selectedSceneNumber)?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-  }, [focusRequest, selectedSceneNumber]);
+    if (focusRequest <= 0) return;
+    const target = focusTarget === "top" ? manuscriptRef.current
+      : selectedSceneNumber === undefined ? undefined : sceneRefs.current.get(selectedSceneNumber);
+    target?.focus({ preventScroll: true });
+    target?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [focusRequest, focusTarget, selectedSceneNumber]);
 
   return <section className="reader-panel">
     <div className="section-kicker"><BookOpenText size={15} />稿件阅读</div>
-    {hasDraft ? <article className="manuscript">
+    {hasDraft ? <article className="manuscript" ref={manuscriptRef} tabIndex={-1}>
       <div className="manuscript-meta"><span>第 {draft.chapter_number ?? "—"} 章</span><span className="meta-divider">/</span><span>{status === "human_review" ? "待审查稿" : "当前稿件"}</span></div>
       <h2>{draft.title || "未命名章节"}</h2>
       <div className="manuscript-stats"><span><AlignLeft size={14} />{draft.word_count || (draft.content?.length ?? 0)} 字</span><span><Clock3 size={14} />实时生成</span></div>
@@ -41,6 +46,7 @@ export function ChapterReader({
             else sceneRefs.current.delete(scene.scene_number);
           }}
           className="manuscript-scene"
+          tabIndex={-1}
           data-scene-number={scene.scene_number}
           data-testid={`scene-${scene.scene_number}`}
           aria-current={selectedSceneNumber === scene.scene_number ? "true" : undefined}

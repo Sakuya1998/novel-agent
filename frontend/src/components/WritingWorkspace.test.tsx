@@ -143,6 +143,19 @@ function mockWorkbench(selectedNovel = novel, state = restorationState) {
 }
 
 describe("App writing navigation", () => {
+  it("clears a planning submission error when another novel has the same review stage", async () => {
+    const planningState: WorkbenchState = { ...baseState, status: "blueprint_review", review_node: "blueprint_review" };
+    props.onSubmit.mockRejectedValueOnce(new Error("Previous novel failed"));
+    mockWorkbench(novel, planningState);
+    const view = render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: "批准并继续" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("Previous novel failed");
+    const nextNovel = { ...novel, id: "novel-2" };
+    mockWorkbench(nextNovel, { ...planningState, novel_id: nextNovel.id });
+    view.rerender(<App />);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
   it("keeps the canon dialog locked while candidate creation is pending after navigation", async () => {
     let resolve!: () => void;
     const pending = new Promise<void>((done) => { resolve = done; });

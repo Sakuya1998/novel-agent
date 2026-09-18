@@ -149,6 +149,7 @@ function App() {
 
             {workspaceView === "plan" ? planningReview ? (
               <PlanningReviewPanel
+                reviewScope={`${novel.id}:${state.status}:${state.current_chapter}`}
                 reviewNode={state.status as "blueprint_review" | "scene_review"}
                 worldBible={state.world_bible ?? ""}
                 characters={state.characters ?? []}

@@ -6,6 +6,7 @@ import type { RunConnectionStatus } from "../useRunJob";
 interface Props {
   status: NovelStatus;
   job: RunJob | null;
+  lastNode?: string;
   connectionStatus: RunConnectionStatus;
   currentChapter: number;
   totalChapters: number;
@@ -36,12 +37,13 @@ const CONNECTION_COPY: Record<RunConnectionStatus, string> = {
 
 function nodeLabel(node?: string): string {
   const stage: WorkflowStage | undefined = STAGES.find((item) => item.id === node);
-  return stage?.statusLabel ?? stage?.label ?? node ?? "准备中";
+  return stage?.statusLabel ?? stage?.label ?? (node || "准备中");
 }
 
 export function WritingStatusBar({
   status,
   job,
+  lastNode,
   connectionStatus,
   currentChapter,
   totalChapters,
@@ -80,7 +82,7 @@ export function WritingStatusBar({
       </div>
       <div className="writing-status-node">
         <span>当前节点</span>
-        <strong>{nodeLabel(job?.current_node)}</strong>
+        <strong>{nodeLabel(job?.current_node || lastNode)}</strong>
       </div>
       <div className="writing-status-connection">
         <span className={`status-dot ${connectionStatus}`} aria-hidden="true" />

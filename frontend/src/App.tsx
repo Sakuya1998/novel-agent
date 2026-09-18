@@ -1,10 +1,9 @@
-import { AlertCircle, ArrowRight, CheckCircle2, GitBranch } from "lucide-react";
+import { AlertCircle, GitBranch } from "lucide-react";
 import { useEffect, useState } from "react";
 import { getAuthStatus, loginAuth, logoutAuth, registerAuth } from "./api";
 import { AuthDialog } from "./components/AuthDialog";
 import { BookAuditPanel } from "./components/BookAuditPanel";
 import { CanonDialog } from "./components/CanonDialog";
-import { ChapterReader } from "./components/ChapterReader";
 import { CreativeBriefDialog } from "./components/CreativeBriefDialog";
 import { EmptyWorkspace } from "./components/EmptyWorkspace";
 import { EvaluationBenchmarkDialog } from "./components/EvaluationBenchmarkDialog";
@@ -19,8 +18,7 @@ import { PlanningReviewPanel } from "./components/PlanningReviewPanel";
 import { PlanningWorkspace } from "./components/PlanningWorkspace";
 import { ProjectOverview } from "./components/ProjectOverview";
 import { QualityWorkspace } from "./components/QualityWorkspace";
-import { ReviewWorkspace } from "./components/ReviewWorkspace";
-import { RunControlPanel } from "./components/RunControlPanel";
+import { WritingWorkspace } from "./components/WritingWorkspace";
 import { StageRail } from "./components/StageRail";
 import { WorkspaceHeader } from "./components/WorkspaceHeader";
 import { WorkspaceNav, type WorkspaceView } from "./components/WorkspaceNav";
@@ -58,7 +56,6 @@ function App() {
   const [createOpen, setCreateOpen] = useState(false);
   const [authEnabled, setAuthEnabled] = useState<boolean>();
   const [authUser, setAuthUser] = useState<Awaited<ReturnType<typeof getAuthStatus>>["user"]>(null);
-  const [reviewFocus, setReviewFocus] = useState<{ sceneNumber?: number; request: number }>({ request: 0 });
   const { novel, state, error, isStreaming, lastNode } = workbench;
   const creativeBrief = novel?.creative_brief ?? state?.creative_brief;
   const planningReview = state?.status === "blueprint_review" || state?.status === "scene_review";
@@ -159,39 +156,25 @@ function App() {
               <div className="workspace-book-audit"><BookAuditPanel report={state.book_audit} totalChapters={state.total_chapters} disabled={isStreaming} onStartRevision={workbench.startBookRevision} /></div>
             ) : <QualityWorkspace state={state} onOpenMonitoring={() => setActiveDialog("monitoring")} onOpenBenchmarks={openBenchmarks} onOpenTraces={openTraces} /> : null}
 
-            {workspaceView === "write" ? (
-              <section className={`content-grid ${state.status === "human_review" ? "with-review" : ""}`}>
-                <ChapterReader draft={state.current_draft} chapters={novel.chapters || []} status={state.status} selectedSceneNumber={reviewFocus.sceneNumber} focusRequest={reviewFocus.request} />
-                {state.status === "human_review" ? (
-                  <ReviewWorkspace
-                    novelId={novel.id}
-                    draft={state.current_draft}
-                    issues={state.issues ?? []}
-                    conflicts={state.conflicts ?? []}
-                    qualityReport={state.quality_report ?? undefined}
-                    persistenceError={state.persistence_error ?? ""}
-                    versions={state.versions ?? []}
-                    evaluations={state.evaluations ?? []}
-                    candidates={state.chapter_candidates ?? []}
-                    disabled={isStreaming}
-                    onSubmit={workbench.resume}
-                    onApplyCanon={workbench.updateCanon}
-                    onGenerateCandidates={workbench.generateCandidates}
-                    onCompareVersions={workbench.compareVersions}
-                    onEvaluateVersion={workbench.evaluateVersion}
-                    onSetEvaluationBaseline={workbench.setEvaluationBaseline}
-                    onCompareEvaluations={workbench.compareEvaluations}
-                    onFocusReader={(sceneNumber, request) => setReviewFocus({ sceneNumber, request })}
-                  />
-                ) : planningReview ? (
-                  <aside className="next-panel review-required-panel"><div className="section-kicker">REVIEW REQUIRED</div><CheckCircle2 size={21} /><h2>规划等待确认</h2><p>批准当前蓝图或分镜后，正文创作才会继续。</p><button className="primary-button full-width" type="button" onClick={() => setWorkspaceView("plan")}>前往审阅<ArrowRight size={15} /></button></aside>
-                ) : state.status === "completed" && state.book_audit ? (
-                  <aside className="next-panel review-required-panel completed"><div className="section-kicker">MANUSCRIPT COMPLETE</div><CheckCircle2 size={21} /><h2>全书已经完成</h2><p>终审报告已生成，可以检查全书质量或发起返修。</p><button className="secondary-button full-width" type="button" onClick={() => setWorkspaceView("quality")}>查看终审<ArrowRight size={15} /></button></aside>
-                ) : (
-                  <RunControlPanel status={state.status} job={state.run_job} disabled={state.status === "running" ? Boolean(state.run_job?.cancel_requested) : isStreaming} onRun={() => workbench.run()} onCancel={workbench.cancelJob} />
-                )}
-              </section>
-            ) : null}
+            {workspaceView === "write" ? <WritingWorkspace
+              novel={novel}
+              state={state}
+              connectionStatus={workbench.connectionStatus}
+              lastNode={lastNode}
+              isStreaming={isStreaming}
+              onRun={workbench.run}
+              onCancel={workbench.cancelJob}
+              onRetry={workbench.retryRunConnection}
+              onSubmit={workbench.resume}
+              onApplyCanon={workbench.updateCanon}
+              onGenerateCandidates={workbench.generateCandidates}
+              onCompareVersions={workbench.compareVersions}
+              onEvaluateVersion={workbench.evaluateVersion}
+              onSetEvaluationBaseline={workbench.setEvaluationBaseline}
+              onCompareEvaluations={workbench.compareEvaluations}
+              onOpenPlanning={() => setWorkspaceView("plan")}
+              onOpenQuality={() => setWorkspaceView("quality")}
+            /> : null}
           </>
         )}
       </main>

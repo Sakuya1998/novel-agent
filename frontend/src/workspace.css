@@ -260,6 +260,24 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .stage > i { width: clamp(22px, 3vw, 58px); margin: 0 14px 0 8px; }
 
 /* Main work area */
+.writing-workspace {
+  display: grid;
+  gap: 18px;
+  max-width: 1500px;
+  min-width: 0;
+  margin: 0 auto;
+  padding: 0 clamp(20px, 3vw, 44px) 54px;
+}
+.writing-workspace-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 430px);
+  align-items: start;
+  gap: 18px;
+  min-width: 0;
+}
+.writing-workspace-grid > * { min-width: 0; }
+.writing-workspace .writing-status-bar { width: 100%; min-width: 0; border-color: var(--line); border-radius: 5px; background: var(--paper); }
+.writing-workspace .manuscript-content { overflow-wrap: anywhere; }
 .content-grid, .content-grid.with-review {
   grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
   gap: 18px;
@@ -566,6 +584,31 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .global-error { align-items: center; margin-top: 14px; }
 .global-error > span { min-width: 0; flex: 1; }
 .global-error > button { min-height: 28px; padding: 4px 9px; border: 1px solid #d8b4aa; background: transparent; color: inherit; font-size: 10px; }
+
+@media (max-width: 1400px) {
+  .writing-status-bar { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+  .writing-status-connection { grid-column: 1 / 3; }
+  .writing-status-command { justify-self: end; }
+}
+
+@media (max-width: 980px) {
+  .writing-workspace-grid { grid-template-columns: minmax(0, 1fr); }
+  .writing-workspace-grid > .review-workspace { grid-row: 2; }
+  .writing-workspace-grid > .next-panel { position: static; }
+}
+
+@media (max-width: 680px) {
+  .writing-workspace { padding: 0 17px 34px; }
+  .writing-status-bar { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 16px; }
+  .writing-status-connection { grid-column: auto; overflow-wrap: anywhere; }
+  .writing-status-command { grid-column: 1 / -1; }
+  .writing-status-progress > strong { font-size: 16px; }
+  .writing-workspace .review-tab-panel,
+  .writing-workspace .review-decision-dock { max-height: none; overflow: visible; }
+  .writing-workspace .review-decision-dock .review-form { position: static; }
+  .writing-workspace .review-tabs { flex-wrap: nowrap; overflow-x: auto; }
+  .writing-workspace .review-tabs button { flex: 0 0 auto; }
+}
 
 @media (max-width: 900px) {
   .empty-workspace-actions { grid-template-columns: 1fr; }

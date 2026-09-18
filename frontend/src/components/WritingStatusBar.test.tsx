@@ -32,6 +32,13 @@ const defaultProps = {
 };
 
 describe("WritingStatusBar", () => {
+  it("shows the final audit as the current node after the novel completes", () => {
+    render(<WritingStatusBar {...defaultProps} status="completed" />);
+
+    expect(screen.getByText("全书终审")).toBeInTheDocument();
+    expect(screen.queryByText("准备中")).not.toBeInTheDocument();
+  });
+
   it.each([undefined, ""])("shows a placeholder when both node sources are empty (%s)", (lastNode) => {
     render(<WritingStatusBar {...defaultProps} status="running" job={{ ...runningJob, current_node: "" }} lastNode={lastNode} />);
     expect(screen.getByText("准备中")).toBeInTheDocument();

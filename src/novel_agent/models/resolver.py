@@ -58,6 +58,8 @@ def _build_openai_chat(
     }
     if resolved.base_url:
         kwargs["base_url"] = resolved.base_url
+    if resolved.provider == "qwen" and resolved.model_name.casefold().startswith("qwen3"):
+        kwargs["extra_body"] = {"enable_thinking": False}
     return ChatOpenAI(**kwargs)  # type: ignore[arg-type]
 
 
@@ -81,6 +83,8 @@ def _build_embeddings(resolved: ResolvedModel) -> Embeddings:
     kwargs = {"model": resolved.model_name, "api_key": resolved.api_key}
     if resolved.base_url:
         kwargs["base_url"] = resolved.base_url
+    if resolved.provider != "openai":
+        kwargs["check_embedding_ctx_length"] = False
     return OpenAIEmbeddings(**kwargs)  # type: ignore[arg-type]
 
 
@@ -298,4 +302,3 @@ class ModelResolver:
             "latency_ms": round((perf_counter() - started) * 1000),
             "message": "连接成功",
         }
-

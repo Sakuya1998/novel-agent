@@ -82,7 +82,7 @@ export function WritingStatusBar({
       </div>
       <div className="writing-status-node">
         <span>当前节点</span>
-        <strong>{nodeLabel(job?.current_node || lastNode)}</strong>
+        <strong>{nodeLabel(status === "completed" ? "book_auditor" : job?.current_node || lastNode)}</strong>
       </div>
       <div className="writing-status-connection">
         <span className={`status-dot ${connectionStatus}`} aria-hidden="true" />

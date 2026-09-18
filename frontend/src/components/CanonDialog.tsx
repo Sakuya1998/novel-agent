@@ -87,14 +87,14 @@ export function CanonDialog({ open, novelId, editable, disabled, onClose, onSubm
   function editCharacter(character: CanonCharacter) {
     setCharacterName(character.name);
     setCharacterPatch({
-      role: character.role ?? "",
-      personality: character.personality ?? "",
+      role: formatCharacterValue(character.role),
+      personality: formatCharacterValue(character.personality),
       relationships: character.relationships?.length
         ? JSON.stringify(character.relationships, null, 2)
         : "",
-      speech_pattern: character.speech_pattern ?? "",
-      behavior: character.behavior ?? "",
-      arc: character.arc ?? "",
+      speech_pattern: formatCharacterValue(character.speech_pattern),
+      behavior: formatCharacterValue(character.behavior),
+      arc: formatCharacterValue(character.arc),
     });
     setFactEditor(undefined);
     setStatusEditor(undefined);
@@ -127,7 +127,7 @@ export function CanonDialog({ open, novelId, editable, disabled, onClose, onSubm
             {tab === "facts" && <FactList title="章节事实" items={canon.facts} targetType="fact" canMutate={canMutate} onAdd={() => { resetEditor(); setFactEditor(emptyFactEditor("fact")); }} onEdit={editFact} onStatus={(item, action) => { resetEditor(); setStatusEditor({ action, targetType: "fact", targetId: item.id, label: (item as CanonFact).subject }); }} />}
             {tab === "characters" && <div className="canon-section">
               <div className="canon-toolbar"><div><strong>角色档案</strong><span>{characters.length} 位规范角色 · {Object.keys(canon.aliases).length} 个别名</span></div></div>
-              <div className="canon-table"><div className="canon-table-head character"><span>角色</span><span>身份 / 最近出场</span><span>操作</span></div>{characters.map((character) => <div className="canon-table-row character" key={character.name}><div><strong>{character.name}</strong><small>{character.personality || "未记录性格"}</small></div><div><span>{character.role || "未设定"}</span><small>第 {character.last_seen_chapter || 0} 章</small></div><div className="canon-row-actions"><button title="编辑角色" aria-label={`编辑角色 ${character.name}`} disabled={!canMutate} onClick={() => editCharacter(character)}><Edit3 size={14} /></button></div></div>)}</div>
+              <div className="canon-table"><div className="canon-table-head character"><span>角色</span><span>身份 / 最近出场</span><span>操作</span></div>{characters.map((character) => <div className="canon-table-row character" key={character.name}><div><strong>{character.name}</strong><small>{formatCharacterValue(character.personality) || "未记录性格"}</small></div><div><span>{formatCharacterValue(character.role) || "未设定"}</span><small>第 {character.last_seen_chapter || 0} 章</small></div><div className="canon-row-actions"><button title="编辑角色" aria-label={`编辑角色 ${character.name}`} disabled={!canMutate} onClick={() => editCharacter(character)}><Edit3 size={14} /></button></div></div>)}</div>
               <form className="canon-alias-form" onSubmit={(event) => { event.preventDefault(); void submit({ action: "merge_alias", alias: alias.trim(), canonical_name: canonicalName, reason: reason.trim() }); }}><div className="canon-form-heading"><Link2 size={15} /><strong>合并角色别名</strong></div><label>别名<input aria-label="角色别名" value={alias} onChange={(event) => setAlias(event.target.value)} disabled={!canMutate || Boolean(characterName)} /></label><label>规范角色<select aria-label="规范角色" value={canonicalName} onChange={(event) => setCanonicalName(event.target.value)} disabled={!canMutate || Boolean(characterName)}><option value="">选择角色</option>{characters.map((item) => <option value={item.name} key={item.name}>{item.name}</option>)}</select></label><label className="canon-reason-field">变更原因<input aria-label="别名合并原因" value={!characterName ? reason : ""} onChange={(event) => setReason(event.target.value)} disabled={!canMutate || Boolean(characterName)} /></label><button className="secondary-button" disabled={!canMutate || Boolean(characterName) || !alias.trim() || !canonicalName || !reason.trim()}><Link2 size={14} />合并别名</button></form>
               {Object.keys(canon.aliases).length > 0 && <div className="canon-alias-list">{Object.entries(canon.aliases).map(([from, to]) => <span key={from}>{from} <strong>→</strong> {to}</span>)}</div>}
             </div>}
@@ -150,6 +150,19 @@ function EditorHeading({ title, onClose }: { title: string; onClose: () => void 
 function ReasonField({ value, onChange }: { value: string; onChange: (value: string) => void }) { return <label>变更原因<textarea aria-label="变更原因" rows={4} value={value} onChange={(event) => onChange(event.target.value)} placeholder="说明为什么需要修改这条 Canon……" /></label>; }
 function actionLabel(action: string) { return ({ upsert_fact: "保存事实", deprecate_fact: "废止事实", confirm_fact: "确认事实", merge_alias: "合并别名", update_character: "更新角色", upsert_thread: "保存叙事线程", update_thread_status: "更新线程状态", upsert_thread_beat: "保存叙事 beat" } as Record<string, string>)[action] ?? action; }
 function formatTime(value: string) { const date = new Date(value); return Number.isNaN(date.getTime()) ? value : date.toLocaleString("zh-CN", { hour12: false }); }
+function formatCharacterValue(value: unknown): string {
+  if (value == null) return "";
+  if (typeof value === "string") return value;
+  if (typeof value !== "object") return String(value);
+  if (Array.isArray(value)) return value.map(formatCharacterValue).filter(Boolean).join("；");
+  return Object.entries(value as Record<string, unknown>)
+    .map(([key, item]) => {
+      const formatted = formatCharacterValue(item);
+      return formatted ? `${key}：${formatted}` : "";
+    })
+    .filter(Boolean)
+    .join("；");
+}
 function characterOperationPatch(patch: Record<string, string>): Record<string, unknown> {
   const relationships = patch.relationships.trim();
   if (!relationships) return { ...patch, relationships: [] };

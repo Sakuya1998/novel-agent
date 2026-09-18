@@ -459,12 +459,12 @@ export interface CanonFact {
 
 export interface CanonCharacter {
   name: string;
-  role?: string;
-  personality?: string;
+  role?: unknown;
+  personality?: unknown;
   relationships?: unknown[];
-  speech_pattern?: string;
-  behavior?: string;
-  arc?: string;
+  speech_pattern?: unknown;
+  behavior?: unknown;
+  arc?: unknown;
   last_seen_chapter?: number;
   appearances?: number[];
 }

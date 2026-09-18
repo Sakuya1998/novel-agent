@@ -39,11 +39,18 @@ export function ChapterEvaluationPanel({ versions, evaluations, disabled, onEval
   const [comparison, setComparison] = useState<EvaluationComparison>();
   const [error, setError] = useState("");
 
+  const availableVersionNumbers = useMemo(() => {
+    const numbers = versions.length > 0
+      ? versions.map((version) => version.version_number)
+      : evaluations.map((evaluation) => evaluation.version_number);
+    return [...new Set(numbers)];
+  }, [evaluations, versions]);
+
   useEffect(() => {
-    setVersionNumber(versions.at(-1)?.version_number ?? 0);
+    setVersionNumber(availableVersionNumbers.at(-1) ?? 0);
     setComparison(undefined);
     setError("");
-  }, [versions]);
+  }, [availableVersionNumbers]);
 
   const latestByVersion = useMemo(() => {
     const result = new Map<number, ChapterEvaluation>();
@@ -97,12 +104,12 @@ export function ChapterEvaluationPanel({ versions, evaluations, disabled, onEval
     }
   }
 
-  if (!versions.length) return null;
+  if (!versions.length && !evaluations.length) return null;
   return <div className="chapter-evaluation">
     <div className="block-label"><Gauge size={14} />质量评测</div>
     <div className="evaluation-toolbar">
       <select aria-label="评测版本" value={versionNumber} onChange={(event) => { setVersionNumber(Number(event.target.value)); setComparison(undefined); }} disabled={disabled || busy}>
-        {versions.map((version) => <option value={version.version_number} key={version.version_number}>v{version.version_number}</option>)}
+        {availableVersionNumbers.map((number) => <option value={number} key={number}>v{number}</option>)}
       </select>
       <select aria-label="评测模式" value={includeJudge ? "judge" : "rules"} onChange={(event) => setIncludeJudge(event.target.value === "judge")} disabled={disabled || busy}>
         <option value="rules">规则评测</option>

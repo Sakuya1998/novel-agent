@@ -25,6 +25,7 @@ const api = vi.hoisted(() => ({
 vi.mock("./api", () => api);
 
 import { useWorkbench } from "./useWorkbench";
+import { useReviewWorkflow } from "./useReviewWorkflow";
 
 const novel: Novel = {
   id: "novel-1",
@@ -120,6 +121,45 @@ describe("useWorkbench background jobs", () => {
     api.listCreativeBriefVersions.mockResolvedValue([]);
     api.listModelTraces.mockResolvedValue([]);
     api.getNovel.mockResolvedValue(novel);
+  });
+
+  it("exposes persisted job connection recovery controls", async () => {
+    api.getNovelState.mockResolvedValue(state("idle", null));
+
+    const { result } = renderHook(() => useWorkbench());
+
+    await waitFor(() => expect(result.current.state?.status).toBe("idle"));
+    expect(result.current.connectionStatus).toBe("idle");
+    expect(result.current.retryRunConnection).toEqual(expect.any(Function));
+  });
+
+  it.each(["revision", "candidate", "restore"])("preserves review input when the real %s command cannot start", async (command) => {
+    api.getNovelState.mockResolvedValue(state("human_review", null));
+    api.startNovelJob.mockRejectedValue(new Error("start unavailable"));
+    const { result } = renderHook(() => {
+      const workbench = useWorkbench();
+      const review = useReviewWorkflow({ novelId: workbench.selectedId ?? "", chapterNumber: 1, onSubmit: workbench.resume });
+      return { workbench, review };
+    });
+    await waitFor(() => expect(result.current.workbench.state?.status).toBe("human_review"));
+    act(() => {
+      result.current.review.selectScene(2);
+      result.current.review.setFeedback("Keep my revision notes");
+    });
+
+    await act(async () => {
+      if (command === "revision") await result.current.review.submitRevision();
+      else await expect(result.current.review.replaceDraft(command === "candidate"
+        ? { feedback: "candidate", candidate_id: "c1" }
+        : { feedback: "restore", version_number: 1 })).rejects.toThrow("start unavailable");
+    });
+
+    expect(result.current.workbench.error).toBe("start unavailable");
+    expect(result.current.review.error).toBe("start unavailable");
+    expect(result.current.review.feedback).toBe("Keep my revision notes");
+    expect(result.current.review.sceneNumber).toBe(2);
+    expect(result.current.review.busyAction).toBe("");
+    expect(result.current.review.focusRequest).toBe(0);
   });
 
   it("reconnects to an active persisted job after loading the project", async () => {

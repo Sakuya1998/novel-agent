@@ -15,11 +15,13 @@ interface Props {
   candidates: ChapterCandidate[];
   currentContent: string;
   disabled: boolean;
-  onGenerate: (count: number, instruction: string) => Promise<void>;
+  onGenerate?: (count: number, instruction: string) => Promise<void>;
   onSelect: (candidateId: string) => Promise<void>;
+  onSelected?: () => void;
+  onError?: (reason: unknown) => void;
 }
 
-export function ChapterCandidatesPanel({ candidates, currentContent, disabled, onGenerate, onSelect }: Props) {
+export function ChapterCandidatesPanel({ candidates, currentContent, disabled, onGenerate, onSelect, onSelected, onError }: Props) {
   const [count, setCount] = useState(3);
   const [instruction, setInstruction] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -31,6 +33,7 @@ export function ChapterCandidatesPanel({ candidates, currentContent, disabled, o
   );
 
   async function generate() {
+    if (!onGenerate) return;
     setSubmitting(true);
     try {
       await onGenerate(count, instruction.trim());
@@ -43,6 +46,9 @@ export function ChapterCandidatesPanel({ candidates, currentContent, disabled, o
     setSelectingId(candidateId);
     try {
       await onSelect(candidateId);
+      onSelected?.();
+    } catch (reason) {
+      onError?.(reason);
     } finally {
       setSelectingId("");
     }
@@ -50,7 +56,7 @@ export function ChapterCandidatesPanel({ candidates, currentContent, disabled, o
 
   return <section className="candidate-panel">
     <div className="block-label"><Sparkles size={14} />候选稿探索</div>
-    <div className="candidate-generator">
+    {onGenerate ? <div className="candidate-generator">
       <div className="candidate-count" aria-label="候选稿数量">
         {[2, 3, 4].map((value) => <button
           type="button"
@@ -73,7 +79,7 @@ export function ChapterCandidatesPanel({ candidates, currentContent, disabled, o
       <button type="button" className="secondary-button" onClick={generate} disabled={disabled || submitting}>
         <Sparkles size={14} />{submitting ? "正在启动" : "生成候选稿"}
       </button>
-    </div>
+    </div> : null}
 
     {candidates.length > 0 && <div className="candidate-list">
       {candidates.map((candidate) => <article className={`candidate-card ${candidate.status}`} key={candidate.id}>

@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ChapterCandidatesPanel } from "./ChapterCandidatesPanel";
@@ -77,5 +77,32 @@ describe("ChapterCandidatesPanel", () => {
     expect(screen.getByText("已过期")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "对比" }).hasAttribute("disabled")).toBe(false);
     expect(screen.getByRole("button", { name: "需重新生成" }).hasAttribute("disabled")).toBe(true);
+  });
+
+  it("notifies after candidate adoption resolves", async () => {
+    let resolve!: () => void;
+    const onSelect = vi.fn(() => new Promise<void>((done) => { resolve = done; }));
+    const onSelected = vi.fn();
+    render(<ChapterCandidatesPanel candidates={[candidate]} currentContent="当前稿" disabled={false} onGenerate={vi.fn().mockResolvedValue(undefined)} onSelect={onSelect} onSelected={onSelected} />);
+
+    const click = userEvent.click(screen.getByRole("button", { name: "采用此稿" }));
+    await waitFor(() => expect(onSelect).toHaveBeenCalledOnce());
+    expect(onSelected).not.toHaveBeenCalled();
+    resolve();
+    await click;
+    expect(onSelected).toHaveBeenCalledOnce();
+  });
+
+  it("reports a rejected adoption without notifying completion", async () => {
+    const failure = new Error("candidate unavailable");
+    const onSelect = vi.fn().mockRejectedValue(failure);
+    const onSelected = vi.fn();
+    const onError = vi.fn();
+    render(<ChapterCandidatesPanel candidates={[candidate]} currentContent="当前稿" disabled={false} onGenerate={vi.fn().mockResolvedValue(undefined)} onSelect={onSelect} onSelected={onSelected} onError={onError} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "采用此稿" }));
+
+    expect(onSelected).not.toHaveBeenCalled();
+    expect(onError).toHaveBeenCalledWith(failure);
   });
 });

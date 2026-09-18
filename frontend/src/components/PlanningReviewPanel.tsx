@@ -1,9 +1,10 @@
 import { BookOpenCheck, CheckCircle2, Clapperboard, GitCompareArrows, History, Plus, RotateCcw, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { PlanningReviewSubmission, PlanningVersion, ScenePlanItem } from "../types";
 
 interface Props {
   reviewNode: "blueprint_review" | "scene_review";
+  reviewScope?: string;
   worldBible: string;
   characters: Record<string, unknown>[];
   outline: Record<string, unknown>[];
@@ -17,16 +18,23 @@ interface Props {
 
 const text = (value: unknown) => value == null ? "" : String(value);
 
-export function PlanningReviewPanel({ reviewNode, worldBible, characters, outline, scenePlan, planningVersions = [], disabled, onSubmit, onLoadVersion, onCompareVersions }: Props) {
+export function PlanningReviewPanel({ reviewNode, reviewScope = reviewNode, worldBible, characters, outline, scenePlan, planningVersions = [], disabled, onSubmit, onLoadVersion, onCompareVersions }: Props) {
   const [world, setWorld] = useState(worldBible);
   const [characterRows, setCharacterRows] = useState(characters);
   const [outlineRows, setOutlineRows] = useState(outline);
   const [sceneRows, setSceneRows] = useState(scenePlan);
   const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
+  const submitScopeVersion = useRef(0);
   const [historyBusy, setHistoryBusy] = useState(false);
   const [fromVersion, setFromVersion] = useState(0);
   const [toVersion, setToVersion] = useState(0);
   const [versionDiff, setVersionDiff] = useState("");
+
+  useEffect(() => {
+    submitScopeVersion.current += 1;
+    setSubmitError("");
+  }, [reviewScope, reviewNode]);
 
   useEffect(() => {
     setWorld(worldBible);
@@ -73,12 +81,18 @@ export function PlanningReviewPanel({ reviewNode, worldBible, characters, outlin
   }
 
   async function approve() {
+    const scopeVersion = submitScopeVersion.current;
+    setSubmitError("");
     setSubmitting(true);
     try {
       if (reviewNode === "blueprint_review") {
         await onSubmit({ review_type: reviewNode, world_bible: world, characters: characterRows, outline: outlineRows });
       } else {
         await onSubmit({ review_type: reviewNode, scene_plan: sceneRows });
+      }
+    } catch (reason) {
+      if (scopeVersion === submitScopeVersion.current) {
+        setSubmitError(reason instanceof Error ? reason.message : "规划提交失败");
       }
     } finally {
       setSubmitting(false);
@@ -122,6 +136,7 @@ export function PlanningReviewPanel({ reviewNode, worldBible, characters, outlin
       </header>
 
       <div className="planning-review-body">
+        {submitError ? <div className="error-callout" role="alert">{submitError}</div> : null}
         {reviewNode === "blueprint_review" ? <>
           <section className="planning-editor-section">
             <div className="section-heading"><strong>世界观圣经</strong></div>

@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PlanningReviewPanel } from "./PlanningReviewPanel";
@@ -7,6 +7,56 @@ import { PlanningReviewPanel } from "./PlanningReviewPanel";
 afterEach(cleanup);
 
 describe("PlanningReviewPanel", () => {
+  it.each(["stage", "novel"])("clears a previous submission error when the planning %s changes", async (changedScope) => {
+    const props = {
+      reviewScope: "novel-1:blueprint_review:1",
+      reviewNode: "blueprint_review" as const,
+      worldBible: "",
+      characters: [], outline: [], scenePlan: [],
+      disabled: false,
+      onSubmit: vi.fn().mockRejectedValue(new Error("Old scope failed")),
+    };
+    const view = render(<PlanningReviewPanel {...props} />);
+    await userEvent.type(screen.getByRole("textbox", { name: "世界观圣经" }), "Unsaved world");
+    await userEvent.click(screen.getByRole("button", { name: "批准并继续" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("Old scope failed");
+    view.rerender(<PlanningReviewPanel {...props} />);
+    expect(screen.getByRole("alert")).toHaveTextContent("Old scope failed");
+    expect(screen.getByRole("textbox", { name: "世界观圣经" })).toHaveValue("Unsaved world");
+
+    view.rerender(<PlanningReviewPanel {...props}
+      reviewScope={changedScope === "stage" ? "novel-1:scene_review:1" : "novel-2:blueprint_review:1"}
+      reviewNode={changedScope === "stage" ? "scene_review" : "blueprint_review"}
+    />);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    if (changedScope === "novel") expect(screen.getByRole("textbox", { name: "世界观圣经" })).toHaveValue("Unsaved world");
+  });
+
+  it("ignores a rejected submission that settles after its planning scope changes", async () => {
+    let reject!: (reason: Error) => void;
+    const pending = new Promise<void>((_resolve, fail) => { reject = fail; });
+    const props = {
+      reviewScope: "novel-1:blueprint_review:1",
+      reviewNode: "blueprint_review" as const,
+      worldBible: "", characters: [], outline: [], scenePlan: [], disabled: false,
+      onSubmit: vi.fn().mockReturnValue(pending),
+    };
+    const view = render(<PlanningReviewPanel {...props} />);
+    await userEvent.click(screen.getByRole("button", { name: "批准并继续" }));
+    view.rerender(<PlanningReviewPanel {...props} reviewScope="novel-2:blueprint_review:1" />);
+    await act(async () => { reject(new Error("Old pending scope failed")); await pending.catch(() => undefined); });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("keeps planning edits and exposes a rejected resume command", async () => {
+    render(<PlanningReviewPanel reviewNode="blueprint_review" worldBible="" characters={[]} outline={[]} scenePlan={[]} disabled={false} onSubmit={vi.fn().mockRejectedValue(new Error("resume unavailable"))} />);
+    await userEvent.type(screen.getByRole("textbox", { name: "世界观圣经" }), "Keep this world");
+    await userEvent.click(screen.getByRole("button", { name: "批准并继续" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("resume unavailable");
+    expect(screen.getByRole("textbox", { name: "世界观圣经" })).toHaveValue("Keep this world");
+    expect(screen.getByRole("button", { name: "批准并继续" })).toBeEnabled();
+  });
+
   it("edits and submits the blueprint as structured data", async () => {
     const onSubmit = vi.fn().mockResolvedValue(undefined);
     render(<PlanningReviewPanel

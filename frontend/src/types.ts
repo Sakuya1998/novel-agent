@@ -752,6 +752,13 @@ export interface RunJobEventsResponse {
   events: RunJobEventRecord[];
 }
 
+export interface WorkflowStage {
+  id: string;
+  label: string;
+  short: string;
+  statusLabel?: string;
+}
+
 export const STAGES = [
   { id: "world_builder", label: "世界观", short: "设" },
   { id: "character_designer", label: "角色", short: "角" },
@@ -759,10 +766,10 @@ export const STAGES = [
   { id: "blueprint_review", label: "蓝图审阅", short: "审" },
   { id: "scene_planner", label: "分镜", short: "镜" },
   { id: "scene_review", label: "分镜审阅", short: "审" },
-  { id: "scene_writer", label: "写作", short: "写" },
+  { id: "scene_writer", label: "写作", short: "写", statusLabel: "场景写作" },
   { id: "scene_rewriter", label: "局部修订", short: "修" },
   { id: "style_editor", label: "润色", short: "润" },
   { id: "consistency_checker", label: "质检", short: "检" },
   { id: "human_review", label: "审查", short: "审" },
   { id: "book_auditor", label: "全书终审", short: "终" },
-] as const;
+] as const satisfies readonly WorkflowStage[];

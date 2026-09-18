@@ -1,24 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { cancelRunJob, compareChapterEvaluations, createNovel, deleteNovel, evaluateChapterVersion, evaluateMemoryQuality, exportNovel as exportNovelFile, getChapterVersionDiff, getMemoryQuality, getNovel, getNovelConflicts, getNovelState, getPlanningVersion, getPlanningVersionDiff, getRunJobEvents, importNovel as importNovelFile, listCreativeBriefVersions, listEvaluationBenchmarks, listModelTraces, listNovels, rebuildMemory, runEvaluationBenchmark, setChapterEvaluationBaseline, startBookRevisionJob, startCandidateGenerationJob, startCanonJob, startNovelJob, updateCreativeBrief } from "./api";
+import { compareChapterEvaluations, createNovel, deleteNovel, evaluateChapterVersion, evaluateMemoryQuality, exportNovel as exportNovelFile, getChapterVersionDiff, getMemoryQuality, getNovel, getNovelConflicts, getNovelState, getPlanningVersion, getPlanningVersionDiff, importNovel as importNovelFile, listCreativeBriefVersions, listEvaluationBenchmarks, listModelTraces, listNovels, rebuildMemory, runEvaluationBenchmark, setChapterEvaluationBaseline, startBookRevisionJob, startCandidateGenerationJob, startCanonJob, startNovelJob, updateCreativeBrief } from "./api";
 import type { CreateNovelPayload } from "./api";
 import { createDefaultCreativeBrief } from "./creativeBrief";
-import type { CanonOperation, CreativeBrief, CreativeBriefVersion, EvaluationBenchmarkRun, MemoryQualityHistory, ModelTrace, Novel, PlanningArtifactType, PlanningReviewSubmission, ReviewSubmission, RunJobEventsResponse, StreamEvent, WorkbenchState } from "./types";
-
-const ACTIVE_JOB_STATUSES = new Set(["queued", "running"]);
-
-function pollDelay(milliseconds: number, signal: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const onAbort = () => {
-      window.clearTimeout(timeout);
-      reject(new DOMException("Aborted", "AbortError"));
-    };
-    const timeout = window.setTimeout(() => {
-      signal.removeEventListener("abort", onAbort);
-      resolve();
-    }, milliseconds);
-    signal.addEventListener("abort", onAbort, { once: true });
-  });
-}
+import type { CanonOperation, CreativeBrief, CreativeBriefVersion, EvaluationBenchmarkRun, MemoryQualityHistory, ModelTrace, Novel, PlanningArtifactType, PlanningReviewSubmission, ReviewSubmission, RunJob, StreamEvent, WorkbenchState } from "./types";
+import { useRunJob } from "./useRunJob";
 
 const emptyState = (id: string): WorkbenchState => ({
   novel_id: id,
@@ -89,11 +74,7 @@ export function useWorkbench() {
   const [lastNode, setLastNode] = useState<string>();
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
-  const [isStreaming, setIsStreaming] = useState(false);
   const [deletingId, setDeletingId] = useState<string>();
-  const pollingJobRef = useRef<string | undefined>(undefined);
-  const pollingNovelRef = useRef<string | undefined>(undefined);
-  const pollAbortRef = useRef<AbortController | undefined>(undefined);
   const selectedIdRef = useRef<string | undefined>(undefined);
   selectedIdRef.current = selectedId;
 
@@ -134,12 +115,6 @@ export function useWorkbench() {
   }, [refreshList]);
 
   useEffect(() => {
-    if (pollingNovelRef.current && pollingNovelRef.current !== selectedId) {
-      pollAbortRef.current?.abort();
-      pollingJobRef.current = undefined;
-      pollingNovelRef.current = undefined;
-      setIsStreaming(false);
-    }
     if (!selectedId) {
       setNovel(undefined);
       setState(undefined);
@@ -262,135 +237,77 @@ export function useWorkbench() {
     }
   }, [updateStateFor]);
 
-  const pollRunJob = useCallback(async (id: string, jobId: string) => {
-    if (pollingJobRef.current === jobId) return;
-    pollAbortRef.current?.abort();
-    const controller = new AbortController();
-    pollAbortRef.current = controller;
-    pollingJobRef.current = jobId;
-    pollingNovelRef.current = id;
-    setIsStreaming(true);
-    let sequence = 0;
-    let consecutiveFailures = 0;
-    try {
-      while (!controller.signal.aborted) {
-        let result: RunJobEventsResponse;
-        try {
-          result = await getRunJobEvents(jobId, sequence, controller.signal);
-          consecutiveFailures = 0;
-        } catch (reason) {
-          if (reason instanceof DOMException && reason.name === "AbortError") throw reason;
-          consecutiveFailures += 1;
-          if (consecutiveFailures > 5) throw reason;
-          await pollDelay(Math.min(350 * (2 ** (consecutiveFailures - 1)), 3000), controller.signal);
-          continue;
-        }
-        for (const record of result.events) {
-          sequence = Math.max(sequence, record.sequence);
-          handleEvent(id, record.payload);
-        }
-        setState((current) => current?.novel_id === id ? {
-          ...current,
-          status: ACTIVE_JOB_STATUSES.has(result.job.status) ? "running" : current.status,
-          run_job: result.job,
-        } : current);
-        if (result.events.length >= 200) continue;
-        if (!ACTIVE_JOB_STATUSES.has(result.job.status)) {
-          if (result.job.status === "failed") setError(result.job.error || "后台任务执行失败");
-          break;
-        }
-        await pollDelay(350, controller.signal);
-      }
-      if (!controller.signal.aborted) {
-        if (selectedIdRef.current === id) await refreshSelected(id);
-        await refreshList();
-      }
-    } catch (reason) {
-      if (!(reason instanceof DOMException && reason.name === "AbortError")) {
-        if (selectedIdRef.current === id) {
-          setError(reason instanceof Error ? reason.message : "后台任务状态读取失败");
-        }
-        if (selectedIdRef.current === id) await refreshSelected(id).catch(() => undefined);
-      }
-    } finally {
-      if (pollingJobRef.current === jobId) {
-        pollingJobRef.current = undefined;
-        pollingNovelRef.current = undefined;
-        if (selectedIdRef.current === id) setIsStreaming(false);
-      }
-    }
-  }, [handleEvent, refreshList, refreshSelected]);
+  const handleJobUpdate = useCallback((id: string, job: RunJob) => {
+    updateStateFor(id, (current) => ({
+      ...current,
+      status: job.status === "queued" || job.status === "running" ? "running" : current.status,
+      run_job: job,
+    }));
+  }, [updateStateFor]);
 
-  useEffect(() => {
-    const job = state?.run_job;
-    if (selectedId && job && ACTIVE_JOB_STATUSES.has(job.status)) {
-      void pollRunJob(selectedId, job.id);
-    }
-  }, [pollRunJob, selectedId, state?.run_job]);
+  const handleJobSettled = useCallback(async (id: string) => {
+    if (selectedIdRef.current === id) await refreshSelected(id);
+    await refreshList();
+  }, [refreshList, refreshSelected]);
+
+  const handleJobError = useCallback((id: string, message: string) => {
+    if (selectedIdRef.current === id) setError(message);
+  }, []);
+
+  const {
+    connectionStatus,
+    isStreaming,
+    startJob,
+    cancelJob: cancelRunJobControl,
+    retry: retryRunConnection,
+  } = useRunJob({
+    selectedId,
+    activeJob: state?.run_job,
+    onEvent: handleEvent,
+    onJobUpdate: handleJobUpdate,
+    onSettled: handleJobSettled,
+    onError: handleJobError,
+  });
 
   const run = useCallback(async (id = selectedId) => {
     if (!id) return;
     setError("");
     try {
-      const job = await startNovelJob(id, "run");
-      if (selectedIdRef.current !== id) return;
-      updateStateFor(id, (current) => ({
-        ...current,
-        status: "running",
-        run_job: job,
-      }));
-      void pollRunJob(id, job.id);
+      await startJob(id, () => startNovelJob(id, "run"));
     } catch (err: unknown) {
       if (selectedIdRef.current === id) {
         setError(err instanceof Error ? err.message : "创作运行失败");
         await refreshSelected(id).catch(() => undefined);
       }
     }
-  }, [pollRunJob, refreshSelected, selectedId, updateStateFor]);
+  }, [refreshSelected, selectedId, startJob]);
 
   const resume = useCallback(async (review: ReviewSubmission | PlanningReviewSubmission) => {
     if (!selectedId) return;
     const id = selectedId;
     setError("");
     try {
-      const job = await startNovelJob(id, "resume", review);
-      if (selectedIdRef.current !== id) return;
-      updateStateFor(id, (current) => ({ ...current, status: "running", run_job: job }));
-      void pollRunJob(id, job.id);
+      await startJob(id, () => startNovelJob(id, "resume", review));
     } catch (err: unknown) {
       if (selectedIdRef.current === id) {
         setError(err instanceof Error ? err.message : "恢复创作失败");
         await refreshSelected(id).catch(() => undefined);
       }
+      throw err;
     }
-  }, [pollRunJob, refreshSelected, selectedId, updateStateFor]);
+  }, [refreshSelected, selectedId, startJob]);
 
   const cancelJob = useCallback(async () => {
-    const job = state?.run_job;
-    const id = selectedId;
-    if (!id || !job || !ACTIVE_JOB_STATUSES.has(job.status)) return;
     setError("");
-    try {
-      const cancelled = await cancelRunJob(job.id);
-      if (selectedIdRef.current !== id) return;
-      updateStateFor(id, (current) => ({ ...current, run_job: cancelled }));
-      await refreshSelected(id);
-    } catch (err: unknown) {
-      if (selectedIdRef.current === id) {
-        setError(err instanceof Error ? err.message : "停止后台任务失败");
-      }
-    }
-  }, [refreshSelected, selectedId, state?.run_job, updateStateFor]);
+    await cancelRunJobControl();
+  }, [cancelRunJobControl]);
 
   const startBookRevision = useCallback(async (chapterNumber: number, feedback: string) => {
     if (!selectedId) return;
     const id = selectedId;
     setError("");
     try {
-      const job = await startBookRevisionJob(id, chapterNumber, feedback);
-      if (selectedIdRef.current !== id) return;
-      updateStateFor(id, (current) => ({ ...current, status: "running", run_job: job }));
-      void pollRunJob(id, job.id);
+      await startJob(id, () => startBookRevisionJob(id, chapterNumber, feedback));
     } catch (err: unknown) {
       if (selectedIdRef.current === id) {
         setError(err instanceof Error ? err.message : "启动全书返修失败");
@@ -398,17 +315,14 @@ export function useWorkbench() {
       }
       throw err;
     }
-  }, [pollRunJob, refreshSelected, selectedId, updateStateFor]);
+  }, [refreshSelected, selectedId, startJob]);
 
   const generateCandidates = useCallback(async (count: number, instruction: string) => {
     if (!selectedId) return;
     const id = selectedId;
     setError("");
     try {
-      const job = await startCandidateGenerationJob(id, count, instruction);
-      if (selectedIdRef.current !== id) return;
-      updateStateFor(id, (current) => ({ ...current, status: "running", run_job: job }));
-      void pollRunJob(id, job.id);
+      await startJob(id, () => startCandidateGenerationJob(id, count, instruction));
     } catch (err: unknown) {
       if (selectedIdRef.current === id) {
         setError(err instanceof Error ? err.message : "候选稿生成失败");
@@ -416,7 +330,7 @@ export function useWorkbench() {
       }
       throw err;
     }
-  }, [pollRunJob, refreshSelected, selectedId, updateStateFor]);
+  }, [refreshSelected, selectedId, startJob]);
 
   const compareVersions = useCallback(async (fromVersion: number, toVersion: number) => {
     if (!selectedId || !state) return "";
@@ -486,10 +400,7 @@ export function useWorkbench() {
     const id = selectedId;
     setError("");
     try {
-      const job = await startCanonJob(id, operation);
-      if (selectedIdRef.current !== id) return;
-      updateStateFor(id, (current) => ({ ...current, status: "running", run_job: job }));
-      void pollRunJob(id, job.id);
+      await startJob(id, () => startCanonJob(id, operation));
     } catch (err: unknown) {
       if (selectedIdRef.current === id) {
         setError(err instanceof Error ? err.message : "Canon 更新失败");
@@ -497,7 +408,7 @@ export function useWorkbench() {
       }
       throw err;
     }
-  }, [pollRunJob, refreshSelected, selectedId, updateStateFor]);
+  }, [refreshSelected, selectedId, startJob]);
 
   const updateBrief = useCallback(async (
     brief: CreativeBrief,
@@ -521,17 +432,16 @@ export function useWorkbench() {
         setCreativeBriefVersions(versions);
       }
       if (result.requires_revalidation) {
-        const job = await startNovelJob(id, "resume", { feedback: "recheck" });
-        if (selectedIdRef.current !== id) return result;
-        updateStateFor(id, (current) => ({
-          ...current,
-          status: "running",
-          run_job: job,
-          creative_brief: result.creative_brief,
-          creative_brief_version: result.creative_brief_version,
-          creative_brief_review_required: true,
-        }));
-        void pollRunJob(id, job.id);
+        await startJob(id, async () => {
+          const job = await startNovelJob(id, "resume", { feedback: "recheck" });
+          updateStateFor(id, (current) => ({
+            ...current,
+            creative_brief: result.creative_brief,
+            creative_brief_version: result.creative_brief_version,
+            creative_brief_review_required: true,
+          }));
+          return job;
+        });
       } else {
         await refreshSelected(id);
       }
@@ -543,7 +453,7 @@ export function useWorkbench() {
       }
       throw err;
     }
-  }, [novel?.creative_brief_version, pollRunJob, refreshSelected, selectedId, updateStateFor]);
+  }, [novel?.creative_brief_version, refreshSelected, selectedId, startJob, updateStateFor]);
 
   const addNovel = useCallback(async (payload: CreateNovelPayload) => {
     setError("");
@@ -574,5 +484,5 @@ export function useWorkbench() {
     }
   }, [refreshList, selectedId]);
 
-  return { novels, novel, state, creativeBriefVersions, modelTraces, evaluationBenchmarks, memoryQuality, selectedId, setSelectedId, lastNode, error, isLoading, isStreaming, deletingId, run, resume, cancelJob, startBookRevision, generateCandidates, updateCanon, updateBrief, loadModelTraces, loadEvaluationBenchmarks, runBenchmark, loadMemoryQuality, runMemoryQuality, rebuildMemoryIndex, exportNovel, importNovel, compareVersions, loadPlanningVersion, comparePlanningVersions, evaluateVersion, setEvaluationBaseline, compareEvaluations, addNovel, removeNovel };
+  return { novels, novel, state, creativeBriefVersions, modelTraces, evaluationBenchmarks, memoryQuality, selectedId, setSelectedId, lastNode, error, isLoading, connectionStatus, isStreaming, deletingId, run, resume, cancelJob, retryRunConnection, startBookRevision, generateCandidates, updateCanon, updateBrief, loadModelTraces, loadEvaluationBenchmarks, runBenchmark, loadMemoryQuality, runMemoryQuality, rebuildMemoryIndex, exportNovel, importNovel, compareVersions, loadPlanningVersion, comparePlanningVersions, evaluateVersion, setEvaluationBaseline, compareEvaluations, addNovel, removeNovel };
 }

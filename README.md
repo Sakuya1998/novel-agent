@@ -112,7 +112,7 @@ novel-agent/
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| POST | `/api/auth/register` | 创建用户及独立工作区，并返回 Bearer 会话 |
+| POST | `/api/auth/register` | 创建用户及独立工作区，并建立 Cookie 会话（同时返回 Bearer 兼容字段） |
 | POST | `/api/auth/login` | 使用用户名或邮箱登录 |
 | GET/POST | `/api/auth/me`、`/api/auth/logout` | 获取当前身份或注销会话 |
 | GET/POST | `/api/auth/users` | 查看或添加当前工作区成员 |
@@ -378,8 +378,8 @@ SceneWriter 同时读取当前章节附近的幕与章节锚点、Canon 和语�
 ### 认证与工作区隔离
 
 本地单用户和旧 CLI 默认保持兼容，`AUTH_ENABLED=false` 时所有请求使用内置的本地 owner 身份。生产部署
-应设置 `AUTH_ENABLED=true`；此时除 `/healthz`、注册和登录外，所有 `/api/*` 请求都必须携带
-`Authorization: Bearer <token>`。会话只在 SQLite 保存 token 的 SHA-256，密码使用带随机盐的 scrypt
+应设置 `AUTH_ENABLED=true`；此时除 `/healthz`、注册和登录外，所有 `/api/*` 请求都必须携带有效的
+HttpOnly 会话 Cookie 或 `Authorization: Bearer <token>`。会话只在 SQLite 保存 token 的 SHA-256，密码使用带随机盐的 scrypt
 哈希，`AUTH_SESSION_HOURS` 控制有效期。
 
 认证接口按“客户端 IP + 登录标识”做窗口限流，`AUTH_RATE_LIMIT_WINDOW_SECONDS` 和
@@ -398,8 +398,9 @@ tenant 隔离；跨 tenant 的资源 ID 查询统一返回 404。角色权限为
 - `editor`：创建作品、运行 Agent、提交审查和治理 Canon，但不能删除作品或管理成员/模型密钥。
 - `viewer`：只读查看当前工作区的数据。
 
-工作台顶栏的用户按钮提供登录、注册和退出入口。浏览器只保存 Bearer token 与脱敏用户信息；注销后服务端
-会话立即失效。跨域部署时 FastAPI CORS 已允许 `Authorization` 请求头。
+工作台顶栏的用户按钮提供登录、注册和退出入口；注销后服务端会话立即失效。浏览器会话使用
+`HttpOnly` Cookie，写请求同时校验可读 CSRF Cookie 与
+`X-CSRF-Token` 请求头；浏览器不在 Web Storage 保存访问令牌。Bearer 认证仍保留给 CLI 和旧 API 客户端。
 
 运行状态接口分为：`GET /healthz` 仅表示进程存活并保持 `{ "status": "ok" }` 兼容返回；
 `GET /readyz` 检查 SQLite、LangGraph checkpoint、Chroma 目录和有效模型配置；数据库中的三类模型
@@ -514,3 +515,14 @@ docker run -p 8000:8000 \
 ```
 
 Docker Compose 使用命名卷保存小说数据库、检查点和主密钥，避免宿主机新建目录的所有权导致非 root 容器无法写入。
+
+## 可选真实模型兼容检查
+
+`.github/workflows/real-model-e2e.yml` 每周运行，也可手动触发；它不属于 PR 必需检查。配置
+`REAL_MODEL_OPENAI_API_KEY` 仓库 Secret 后会验证聊天、嵌入和单章自动审批流程；使用 Anthropic 聊天时还需
+`REAL_MODEL_ANTHROPIC_API_KEY`，并将仓库变量 `REAL_MODEL_PROVIDER` 设为 `anthropic`。可选变量
+`REAL_MODEL_CHAT_MODEL` 和 `REAL_MODEL_EMBEDDING_MODEL` 控制模型名称。
+
+检查默认限制单部作品最多 30,000 tokens、单次输出最多 1,024 tokens、总时长最多 20 分钟。报告只包含
+供应商、模型名、节点状态和脱敏失败类别，不保存提示词、生成正文、模型响应或密钥。未配置密钥时工作流
+生成 `skipped` 报告并正常结束。

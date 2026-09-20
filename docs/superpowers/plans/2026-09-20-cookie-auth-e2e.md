@@ -183,25 +183,25 @@ git commit -m "test: add browser authentication smoke flow"
 **Interfaces:**
 - Produces: manual/nightly workflow report with provider, model, state transitions and redacted failure category.
 
-- [ ] **Step 1: Add script contract tests**
+- [x] **Step 1: Add script contract tests**
 
 Add a no-key invocation test to `tests/test_model_resolver.py` that expects exit code 2 and a stable `skipped` JSON result without revealing environment values.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 Run: `$env:TEMP='D:\novel-agent\.tmp\pytest-temp'; $env:TMP=$env:TEMP; .\.venv\Scripts\python.exe -m pytest tests/test_model_resolver.py -k real_model_smoke -q`
 
 Expected: FAIL because the script does not exist.
 
-- [ ] **Step 3: Implement the bounded smoke script**
+- [x] **Step 3: Implement the bounded smoke script**
 
 Validate one configured chat model, one embedding model and one single-chapter auto-approved workflow with a strict token budget. Emit JSON containing no prompt, generated prose or key material. Exit 0 on pass, 1 on failure, 2 when credentials are absent.
 
-- [ ] **Step 4: Add manual/nightly workflow**
+- [x] **Step 4: Add manual/nightly workflow**
 
 Run on `workflow_dispatch` and weekly schedule. Skip cleanly when repository secrets are absent; upload the JSON report as an artifact. Do not add this workflow to pull-request required checks.
 
-- [ ] **Step 5: Document and verify**
+- [x] **Step 5: Document and verify**
 
 Document required secret names and cost bounds. Run the no-key test and Ruff against the script.
 

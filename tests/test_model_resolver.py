@@ -1,5 +1,11 @@
 """全局模型路由解析与 LangChain 客户端构造测试。"""
 
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
 import pytest
 
 from novel_agent.config import Config
@@ -10,6 +16,8 @@ from novel_agent.models.resolver import (
     ModelResolver,
     sanitize_provider_error,
 )
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 @pytest.fixture
@@ -343,6 +351,39 @@ def test_validate_runtime_reports_missing_environment_key(tmp_path):
 
     with pytest.raises(ModelConfigurationError, match="API Key"):
         ModelResolver(config=cfg, store=ModelSettingsStore(cfg)).validate_runtime()
+
+
+def test_real_model_smoke_without_credentials_is_stable_and_redacted(tmp_path):
+    env = os.environ.copy()
+    env.pop("OPENAI_API_KEY", None)
+    env.pop("ANTHROPIC_API_KEY", None)
+    env["UNRELATED_SECRET"] = "must-not-appear"
+    report_path = tmp_path / "real-model-smoke.json"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "scripts.real_model_smoke",
+            "--report",
+            str(report_path),
+        ],
+        cwd=ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+
+    assert result.returncode == 2
+    assert result.stderr == ""
+    assert "must-not-appear" not in result.stdout
+    assert json.loads(result.stdout) == {
+        "status": "skipped",
+        "reason": "credentials_missing",
+    }
+    assert json.loads(report_path.read_text(encoding="utf-8")) == json.loads(result.stdout)
 
 
 def test_validate_runtime_rejects_anthropic_embedding_route(resolver_env):

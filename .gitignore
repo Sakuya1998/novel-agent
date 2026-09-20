@@ -16,7 +16,6 @@ frontend/dist/
 frontend/pnpm-lock.yaml
 build/
 dist/
-uv.lock
 
 # 机密与环境配置
 .env

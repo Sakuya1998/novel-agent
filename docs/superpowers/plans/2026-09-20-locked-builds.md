@@ -21,31 +21,34 @@
 ### Task 1: CI Uses The Lockfile
 
 **Files:**
+- Modify: `.gitignore`
 - Modify: `.github/workflows/ci.yml`
 - Modify: `README.md`
+- Create: `uv.lock`
 
 **Interfaces:**
 - Produces: CI commands executed through `uv run --locked` in the project `.venv`.
 
-- [ ] **Step 1: Record the failing policy check**
+- [x] **Step 1: Record the failing policy check**
 
 Run: `rg -n "pip install -r requirements.txt" .github/workflows/ci.yml Dockerfile`
 
 Expected: matches in both CI and Docker, proving release paths bypass the lockfile.
 
-- [ ] **Step 2: Switch the lint/test job**
+- [x] **Step 2: Switch the lint/test job**
 
 Use `astral-sh/setup-uv@v6` with `version: "0.12.1"`, run `uv sync --locked --all-extras`, then execute Ruff, pytest and evaluations with `uv run --locked`.
+Track the generated `uv.lock`; locked CI cannot work while the file is ignored.
 
-- [ ] **Step 3: Switch dependency audit input**
+- [x] **Step 3: Switch dependency audit input**
 
 Export the locked production dependency set with `uv export --locked --no-dev --no-emit-project --format requirements-txt --output-file .tmp/locked-requirements.txt`, then run pip-audit against that file with the existing scoped Chroma exceptions.
 
-- [ ] **Step 4: Update local documentation**
+- [x] **Step 4: Update local documentation**
 
 Replace the primary `pip install -e ".[dev]"` path with `uv sync --locked --all-extras`; retain pip as a clearly labeled compatibility path that is not release-reproducible.
 
-- [ ] **Step 5: Validate workflow syntax and policy**
+- [x] **Step 5: Validate workflow syntax and policy**
 
 Run:
 

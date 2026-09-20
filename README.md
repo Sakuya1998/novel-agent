@@ -45,11 +45,11 @@
 
 ## 快速开始
 
-要求 **Python 3.14+**(全部依赖均为最新稳定版,见 requirements.txt)。
+要求 **Python 3.14+** 和 **uv 0.12.1**。发布与 CI 使用 `uv.lock` 中的精确依赖版本。
 
 ```bash
-# 1. 安装项目与开发依赖
-pip install -e ".[dev]"
+# 1. 从锁文件安装项目与开发依赖
+uv sync --locked --all-extras
 
 # 2. 可选：复制环境变量作为首次启动回退
 cp .env.example .env
@@ -67,7 +67,7 @@ python main.py --resume novel_ab12cd34 --feedback "加强追逐" --scene-number 
 python main.py --resume novel_ab12cd34 --version-number 3
 
 # 3b. API 服务(前后端分离模式)
-uvicorn novel_agent.api.server:app --reload
+uv run --locked uvicorn novel_agent.api.server:app --reload
 
 # 3c. React + TypeScript 工作台(另开终端)
 cd frontend
@@ -76,10 +76,13 @@ npm run dev
 
 # 3d. 固定质量评测与回归门禁(不需要模型 Key)
 cd ..
-python -m scripts.run_evaluations
+uv run --locked python -m scripts.run_evaluations
 # 与历史运行比较；任一样本回归超过 3 分时退出码为 1
-python -m scripts.run_evaluations --baseline-run-id eval_xxx --json
+uv run --locked python -m scripts.run_evaluations --baseline-run-id eval_xxx --json
 ```
+
+如环境中暂时无法使用 uv，可用 `pip install -e ".[dev]"` 兼容安装；该方式会重新解析依赖，
+不保证与 CI 或生产镜像完全一致，因此不用于发布验证。
 
 打开 `http://localhost:5173` 后，点击顶栏齿轮进入“模型设置”。首次使用请先新增模型服务，
 再在“模型分工”中分别选择创作模型、分析模型和嵌入模型。工作台尚未保存模型分工时，系统继续
@@ -496,8 +499,8 @@ API 额外删除全部 Linux capabilities，SQLite、checkpoint、Chroma、模�
 ## 测试与质量
 
 ```bash
-ruff check src scripts tests main.py
-pytest
+uv run --locked ruff check src scripts tests main.py
+uv run --locked pytest
 cd frontend && npm test && npm run typecheck && npm run build
 ```
 

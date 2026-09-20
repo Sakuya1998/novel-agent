@@ -13,14 +13,18 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.14"
-          cache: pip
-      - run: pip install -r requirements.txt -e ".[dev]"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.12.1"
+          enable-cache: true
+      - name: Install locked Python dependencies
+        run: uv sync --locked --all-extras
       - name: Lint
-        run: ruff check src tests scripts main.py
+        run: uv run --locked ruff check src tests scripts main.py
       - name: Test
-        run: pytest
+        run: uv run --locked pytest
       - name: Evaluation regression gate
-        run: python -m scripts.run_evaluations
+        run: uv run --locked python -m scripts.run_evaluations
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
@@ -83,14 +87,21 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.14"
-      - run: pip install pip-audit
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.12.1"
+          enable-cache: true
+      - name: Export locked production dependencies
+        run: |
+          mkdir -p .tmp
+          uv export --locked --no-dev --no-emit-project --format requirements-txt --output-file .tmp/locked-requirements.txt
       - name: Dependency audit
         # ChromaDB 1.5.9 is the latest PyPI release, but these advisories have
         # no upstream fixed version yet. This project uses only embedded
         # persistent storage; check_deployment.py rejects HTTP-server usage
         # and Compose services, so keep this exception explicit and scoped.
         run: >
-          pip-audit -r requirements.txt --strict
+          uv tool run --from pip-audit pip-audit -r .tmp/locked-requirements.txt --strict
           --ignore-vuln PYSEC-2026-311
           --ignore-vuln CVE-2026-45830
           --ignore-vuln CVE-2026-45831

@@ -1513,9 +1513,19 @@ async def test_frontend_cors_allows_vite_origin(api_env):
                 "Access-Control-Request-Method": "POST",
             },
         )
+        backup_response = await c.options(
+            "/api/novels/novel-1/export",
+            headers={
+                "Origin": "http://localhost:5173",
+                "Access-Control-Request-Method": "GET",
+                "Access-Control-Request-Headers": "x-backup-password",
+            },
+        )
 
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
+    assert backup_response.status_code == 200
+    assert "x-backup-password" in backup_response.headers["access-control-allow-headers"].lower()
 
 
 async def test_model_profile_api_never_returns_plaintext_key(api_env):

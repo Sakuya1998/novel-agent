@@ -29,25 +29,25 @@
 - Consumes: Starlette `CORSMiddleware` preflight handling.
 - Produces: `X-Backup-Password` in the allowed CORS request-header set.
 
-- [ ] **Step 1: Write the failing preflight test**
+- [x] **Step 1: Write the failing preflight test**
 
 Extend `test_frontend_cors_allows_vite_origin` with a second OPTIONS request carrying `Access-Control-Request-Headers: x-backup-password`, and assert status 200 plus `x-backup-password` in `access-control-allow-headers`.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 Run: `$env:TEMP='D:\novel-agent\.tmp\pytest-temp'; $env:TMP=$env:TEMP; .\.venv\Scripts\python.exe -m pytest tests/test_api.py::test_frontend_cors_allows_vite_origin -q`
 
 Expected: FAIL because the encrypted-backup preflight returns 400.
 
-- [ ] **Step 3: Implement the minimal CORS change**
+- [x] **Step 3: Implement the minimal CORS change**
 
 Set `allow_headers` to `['Content-Type', 'Authorization', 'X-Backup-Password']` without changing origins, methods, or credentials.
 
-- [ ] **Step 4: Verify GREEN**
+- [x] **Step 4: Verify GREEN**
 
 Run the focused command from Step 2. Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add tests/test_api.py src/novel_agent/api/server.py
@@ -108,4 +108,3 @@ Expected: all tests and Ruff pass.
 git add tests/test_api.py src/novel_agent/models/resolver.py src/novel_agent/api/server.py .github/workflows/ci.yml README.md
 git commit -m "fix: report effective model readiness"
 ```
-

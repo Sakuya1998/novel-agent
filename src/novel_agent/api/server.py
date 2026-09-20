@@ -179,7 +179,7 @@ app.add_middleware(
     allow_origins=[origin.strip() for origin in cfg.frontend_origins.split(",") if origin.strip()],
     allow_credentials=False,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization"],
+    allow_headers=["Content-Type", "Authorization", "X-Backup-Password"],
 )
 app.include_router(model_settings_router)
 
@@ -3257,4 +3257,3 @@ async def metrics() -> StreamingResponse:
         f"novel_agent_audit_write_failures {int(state.get('audit_write_failures', 0))}",
     ]
     return StreamingResponse("\n".join(lines) + "\n", media_type="text/plain; version=0.0.4")
-

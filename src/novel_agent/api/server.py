@@ -3215,8 +3215,8 @@ async def readyz() -> JSONResponse:
     checks["checkpoint"] = {"status": "ok" if checkpoint_path.exists() else "missing"}
     chroma_path = Path(cfg.chroma_persist_dir)
     checks["chroma"] = {"status": "ok" if chroma_path.exists() else "missing"}
-    model_configured = bool(cfg.openai_api_key or cfg.anthropic_api_key)
-    checks["model"] = {"status": "configured" if model_configured else "fallback"}
+    resolver = ModelResolver(config=cfg, store=app.state.model_settings_store)
+    checks["model"] = resolver.configuration_status()
     try:
         versions = store.get_schema_versions()
         expected = {
@@ -3230,7 +3230,7 @@ async def readyz() -> JSONResponse:
         }
     except Exception as exc:
         checks["schema"] = {"status": "error", "detail": type(exc).__name__}
-    healthy = all(item["status"] in {"ok", "configured", "fallback"} for item in checks.values())
+    healthy = all(item["status"] in {"ok", "configured"} for item in checks.values())
     payload = {"status": "ready" if healthy else "not_ready", "checks": checks}
     return JSONResponse(payload, status_code=200 if healthy else 503)
 

@@ -52,6 +52,7 @@ jobs:
       - name: Prepare production smoke environment
         run: |
           cp .env.production.example .env
+          sed -i 's/^OPENAI_API_KEY=.*/OPENAI_API_KEY=test-readiness-key/' .env
       - name: Validate Compose configuration
         run: docker compose config --quiet
       - name: Offline deployment checks

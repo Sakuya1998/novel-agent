@@ -74,6 +74,60 @@ async def test_healthz(api_env):
         assert (await c.get("/healthz")).json() == {"status": "ok"}
 
 
+async def test_readiness_reports_environment_model_configuration(api_env):
+    from httpx import ASGITransport, AsyncClient
+
+    async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
+        response = await c.get("/readyz")
+
+    assert response.status_code == 200
+    assert response.json()["checks"]["model"] == {
+        "status": "configured",
+        "source": "environment",
+    }
+
+
+async def test_readiness_reports_database_model_configuration(api_env):
+    from httpx import ASGITransport, AsyncClient
+
+    api_env.cfg.openai_api_key = ""
+    async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
+        profile = (await c.post("/api/model-settings/profiles", json={
+            "name": "Readiness OpenAI",
+            "provider": "openai",
+            "base_url": "",
+            "api_key": "readiness-key",
+            "chat_models": ["gpt-readiness"],
+            "embedding_models": ["embed-readiness"],
+        })).json()
+        routes = {
+            "creative": {"profile_id": profile["id"], "model_name": "gpt-readiness"},
+            "analysis": {"profile_id": profile["id"], "model_name": "gpt-readiness"},
+            "embedding": {"profile_id": profile["id"], "model_name": "embed-readiness"},
+        }
+        assert (await c.put("/api/model-settings/routes", json=routes)).status_code == 200
+        response = await c.get("/readyz")
+
+    assert response.status_code == 200
+    assert response.json()["checks"]["model"] == {
+        "status": "configured",
+        "source": "database",
+    }
+
+
+async def test_readiness_rejects_missing_model_configuration(api_env):
+    from httpx import ASGITransport, AsyncClient
+
+    api_env.cfg.openai_api_key = ""
+    api_env.cfg.anthropic_api_key = ""
+    async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
+        response = await c.get("/readyz")
+
+    assert response.status_code == 503
+    assert response.json()["checks"]["model"]["status"] == "unconfigured"
+    assert response.json()["checks"]["model"]["source"] == "none"
+
+
 async def test_auth_status_reflects_local_and_authenticated_modes(api_env):
     from httpx import ASGITransport, AsyncClient
 

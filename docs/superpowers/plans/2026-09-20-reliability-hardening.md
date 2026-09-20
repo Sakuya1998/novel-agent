@@ -67,29 +67,29 @@ git commit -m "fix: allow encrypted backup CORS header"
 - Produces: `ModelResolver.configuration_status() -> dict[str, str]` with `status` and `source`.
 - Consumes: `ModelSettingsStore.get_routes()`, `ModelResolver.validate_runtime()` and environment fallback settings.
 
-- [ ] **Step 1: Write failing readiness tests**
+- [x] **Step 1: Write failing readiness tests**
 
 Add API tests for three states: complete database routes return `configured/database`; complete environment fallback returns `configured/environment`; missing configuration returns HTTP 503 with `unconfigured/none`. Patch `app.state.model_settings_store` only through the existing `api_env` fixture.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 Run: `$env:TEMP='D:\novel-agent\.tmp\pytest-temp'; $env:TMP=$env:TEMP; .\.venv\Scripts\python.exe -m pytest tests/test_api.py -k readiness -q`
 
 Expected: FAIL because `/readyz` only checks environment keys and reports `fallback`.
 
-- [ ] **Step 3: Implement readiness status**
+- [x] **Step 3: Implement readiness status**
 
 Add `configuration_status()` to `ModelResolver`. It must call `validate_runtime()` without provider requests, return database when routes exist and validate, environment when routes are empty and fallback validates, and `unconfigured/none` with a sanitized detail on `ModelConfigurationError`.
 
 Update `/readyz` to place that object in `checks['model']` and treat only `ok` or `configured` as healthy.
 
-- [ ] **Step 4: Keep Compose smoke configuration explicit**
+- [x] **Step 4: Keep Compose smoke configuration explicit**
 
 In the Compose smoke step, set `OPENAI_API_KEY=test-readiness-key` so `.env.production.example` can remain secret-free while readiness has a syntactically complete environment fallback.
 
 Document that `/readyz` returns 503 until model routes or environment fallback are configured.
 
-- [ ] **Step 5: Verify focused and full checks**
+- [x] **Step 5: Verify focused and full checks**
 
 Run:
 
@@ -102,7 +102,7 @@ $env:TMP=$env:TEMP
 
 Expected: all tests and Ruff pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add tests/test_api.py src/novel_agent/models/resolver.py src/novel_agent/api/server.py .github/workflows/ci.yml README.md

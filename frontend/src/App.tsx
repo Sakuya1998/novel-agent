@@ -51,14 +51,14 @@ function errorCopy(error: string) {
 }
 
 function App() {
-  const workbench = useWorkbench();
+  const [authEnabled, setAuthEnabled] = useState<boolean>();
+  const [authUser, setAuthUser] = useState<Awaited<ReturnType<typeof getAuthStatus>>["user"]>(null);
+  const workbench = useWorkbench(authEnabled === false || (authEnabled === true && authUser !== null));
   const serviceStatus = useServiceStatus();
   const [activeDialog, setActiveDialog] = useState<DialogName>();
   const [workspaceView, setWorkspaceView] = useState<WorkspaceView>("write");
   const [readerFocus, setReaderFocus] = useState<WritingReaderFocus>();
   const [createOpen, setCreateOpen] = useState(false);
-  const [authEnabled, setAuthEnabled] = useState<boolean>();
-  const [authUser, setAuthUser] = useState<Awaited<ReturnType<typeof getAuthStatus>>["user"]>(null);
   const { novel, state, error, isStreaming, lastNode } = workbench;
   const reviewWorkflow = useReviewWorkflow({
     novelId: workbench.selectedId ?? "",

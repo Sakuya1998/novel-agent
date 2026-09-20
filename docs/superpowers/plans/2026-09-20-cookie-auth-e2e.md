@@ -136,15 +136,15 @@ git commit -m "feat(frontend): use cookie-backed sessions"
 - Produces: `npm run test:e2e` using isolated FastAPI and Vite web servers.
 - Consumes: Cookie/CSRF behavior from Tasks 1-2.
 
-- [ ] **Step 1: Install and configure Playwright**
+- [x] **Step 1: Install and configure Playwright**
 
-Run `npm install --save-dev --save-exact @playwright/test@1.55.0`, then add scripts `test:e2e` and `test:e2e:install`. Configure desktop Chromium and a mobile Chromium project, screenshots/traces only on failure, and web servers bound to dedicated test ports.
+Run `npm install --save-dev --save-exact @playwright/test@1.55.1`, then add scripts `test:e2e` and `test:e2e:install`. Version 1.55.1 is the minimum patch for GHSA-7mvr-c777-76hp. Configure desktop Chromium and a mobile Chromium project, screenshots/traces only on failure, and web servers bound to dedicated test ports.
 
-- [ ] **Step 2: Create an isolated E2E server**
+- [x] **Step 2: Create an isolated E2E server**
 
 `scripts/e2e_server.py` must set SQLite, checkpoint, Chroma, transfer and key paths under a supplied temporary root before importing `novel_agent.api.server`, then launch uvicorn. Configure auth on and an environment model fallback without making provider calls.
 
-- [ ] **Step 3: Write the first browser test and verify failure**
+- [x] **Step 3: Write the first browser test and verify failure**
 
 Test registration, cookie-based refresh recovery, novel creation, encrypted backup download, logout and rejected post-logout access. Assert console errors are empty.
 
@@ -152,15 +152,15 @@ Run: `npm run test:e2e -- --project=chromium`.
 
 Expected before server/client wiring is complete: FAIL at the first missing cookie or CSRF behavior.
 
-- [ ] **Step 4: Complete deterministic fixtures**
+- [x] **Step 4: Complete deterministic fixtures**
 
 Use API setup for data that does not need UI coverage. Do not start a real generation job in the initial E2E because provider calls are out of scope; exercise persisted job/review recovery through existing deterministic API test coverage.
 
-- [ ] **Step 5: Add CI browser job**
+- [x] **Step 5: Add CI browser job**
 
 Install Chromium with Playwright dependencies, run `npm run test:e2e`, and upload the Playwright report only on failure.
 
-- [ ] **Step 6: Verify E2E**
+- [x] **Step 6: Verify E2E**
 
 Run: `npm run test:e2e`.
 

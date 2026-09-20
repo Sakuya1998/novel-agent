@@ -62,7 +62,7 @@ const emptyState = (id: string): WorkbenchState => ({
   },
 });
 
-export function useWorkbench() {
+export function useWorkbench(enabled = true) {
   const [novels, setNovels] = useState<Novel[]>([]);
   const [selectedId, setSelectedId] = useState<string>();
   const [novel, setNovel] = useState<Novel>();
@@ -111,11 +111,24 @@ export function useWorkbench() {
   }, []);
 
   useEffect(() => {
+    if (!enabled) {
+      setNovels([]);
+      setSelectedId(undefined);
+      setNovel(undefined);
+      setState(undefined);
+      setCreativeBriefVersions([]);
+      setModelTraces([]);
+      setMemoryQuality({ latest: null, runs: [] });
+      setError("");
+      setIsLoading(false);
+      return;
+    }
+    setIsLoading(true);
     refreshList().catch((err: unknown) => setError(err instanceof Error ? err.message : "无法加载作品")).finally(() => setIsLoading(false));
-  }, [refreshList]);
+  }, [enabled, refreshList]);
 
   useEffect(() => {
-    if (!selectedId) {
+    if (!enabled || !selectedId) {
       setNovel(undefined);
       setState(undefined);
       setCreativeBriefVersions([]);
@@ -130,7 +143,7 @@ export function useWorkbench() {
         setError(err instanceof Error ? err.message : "无法加载作品状态");
       }
     });
-  }, [refreshSelected, selectedId]);
+  }, [enabled, refreshSelected, selectedId]);
 
   const loadModelTraces = useCallback(async (agent = "") => {
     if (!selectedId) return [];

@@ -45,15 +45,19 @@ from novel_agent.models.model_settings import ModelSettingsError, ModelSettingsS
 from novel_agent.models.resolver import ModelConfigurationError, ModelResolver, sanitize_provider_error
 from novel_agent.models.runtime import model_call_context
 from novel_agent.security import (
+    CSRF_COOKIE_NAME,
     LOCAL_TENANT_ID,
     LOCAL_USER_ID,
+    SESSION_COOKIE_NAME,
     Principal,
     expiry_iso,
     hash_password,
+    new_csrf_token,
     new_session_token,
     reset_current_principal,
     set_current_principal,
     token_hash,
+    verify_csrf_token,
     verify_password,
 )
 from novel_agent.tools.analysis_tools import build_consistency_diagnostics
@@ -177,9 +181,9 @@ app = FastAPI(title="Multi-Agent 小说创作系统 API", version="1.0.0", lifes
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[origin.strip() for origin in cfg.frontend_origins.split(",") if origin.strip()],
-    allow_credentials=False,
+    allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization", "X-Backup-Password"],
+    allow_headers=["Content-Type", "Authorization", "X-Backup-Password", "X-CSRF-Token"],
 )
 app.include_router(model_settings_router)
 
@@ -194,10 +198,15 @@ def _local_principal() -> Principal:
     )
 
 
-def _auth_token(request: Request) -> str:
+def _auth_token(request: Request) -> tuple[str, str]:
+    cookie_token = request.cookies.get(SESSION_COOKIE_NAME, "").strip()
+    if cookie_token:
+        return cookie_token, "cookie"
     value = request.headers.get("Authorization", "")
     scheme, _, token = value.partition(" ")
-    return token.strip() if scheme.lower() == "bearer" else ""
+    if scheme.lower() == "bearer" and token.strip():
+        return token.strip(), "bearer"
+    return "", ""
 
 
 def _request_ip(request: Request) -> str:
@@ -302,7 +311,7 @@ async def authenticate_request(request: Request, call_next):
     if isinstance(metrics, dict):
         metrics["requests_total"] = int(metrics.get("requests_total", 0)) + 1
     principal: Principal | None = None
-    raw_token = _auth_token(request)
+    raw_token, auth_transport = _auth_token(request)
     if path.startswith("/api") and not public:
         if cfg.auth_enabled:
             if not raw_token:
@@ -323,8 +332,23 @@ async def authenticate_request(request: Request, call_next):
     if principal is not None:
         request.state.principal = principal
         request.state.auth_token = raw_token
+        request.state.auth_transport = auth_transport
     token = set_current_principal(principal)
     try:
+        if (
+            cfg.auth_enabled
+            and principal is not None
+            and auth_transport == "cookie"
+            and request.method in {"POST", "PUT", "PATCH", "DELETE"}
+            and path not in {"/api/auth/login", "/api/auth/register"}
+            and not verify_csrf_token(
+                request.cookies.get(CSRF_COOKIE_NAME, ""),
+                request.headers.get("X-CSRF-Token", ""),
+            )
+        ):
+            response = JSONResponse({"detail": "CSRF 校验失败"}, status_code=403)
+            _observe_request(metrics, started, response.status_code)
+            return response
         if (
             cfg.auth_enabled
             and principal is not None
@@ -555,9 +579,10 @@ class TransferExportRequest(BaseModel):
     language: str = Field(default="zh-CN", max_length=30)
 
 
-def _auth_response(user: dict, token: str, expires_at: str) -> dict:
+def _auth_response(user: dict, token: str, expires_at: str, csrf_token: str) -> dict:
     return {
         "access_token": token,
+        "csrf_token": csrf_token,
         "token_type": "bearer",
         "expires_at": expires_at,
         "user": {
@@ -572,6 +597,47 @@ def _auth_response(user: dict, token: str, expires_at: str) -> dict:
     }
 
 
+def _set_auth_cookies(response: JSONResponse, session_token: str, csrf_token: str) -> None:
+    max_age = int(cfg.auth_session_hours) * 60 * 60
+    secure = cfg.effective_auth_cookie_secure
+    response.set_cookie(
+        SESSION_COOKIE_NAME,
+        session_token,
+        max_age=max_age,
+        httponly=True,
+        secure=secure,
+        samesite="lax",
+        path="/",
+    )
+    response.set_cookie(
+        CSRF_COOKIE_NAME,
+        csrf_token,
+        max_age=max_age,
+        httponly=False,
+        secure=secure,
+        samesite="lax",
+        path="/",
+    )
+
+
+def _clear_auth_cookies(response: JSONResponse) -> None:
+    secure = cfg.effective_auth_cookie_secure
+    response.delete_cookie(
+        SESSION_COOKIE_NAME,
+        path="/",
+        secure=secure,
+        httponly=True,
+        samesite="lax",
+    )
+    response.delete_cookie(
+        CSRF_COOKIE_NAME,
+        path="/",
+        secure=secure,
+        httponly=False,
+        samesite="lax",
+    )
+
+
 @app.get("/api/auth/status")
 async def get_auth_status(request: Request) -> dict:
     principal = getattr(request.state, "principal", None)
@@ -580,7 +646,7 @@ async def get_auth_status(request: Request) -> dict:
 
 
 @app.post("/api/auth/register", status_code=201)
-async def register_auth_user(req: AuthRegisterRequest, request: Request) -> dict:
+async def register_auth_user(req: AuthRegisterRequest, request: Request) -> JSONResponse:
     retry_after = _check_auth_rate_limit(request, req.username, scope="register")
     if retry_after is not None:
         _audit_request(request, "auth.register_rate_limited", metadata={"retry_after": retry_after})
@@ -602,6 +668,7 @@ async def register_auth_user(req: AuthRegisterRequest, request: Request) -> dict
         _audit_request(request, "auth.register_failed", metadata={"reason": "duplicate"})
         raise HTTPException(409, "用户名或邮箱已存在") from exc
     token = new_session_token()
+    csrf_token = new_csrf_token()
     expires_at = expiry_iso(cfg.auth_session_hours)
     store.create_session(f"session_{uuid4().hex}", user_id, token_hash(token), expires_at)
     _audit_request(
@@ -612,11 +679,13 @@ async def register_auth_user(req: AuthRegisterRequest, request: Request) -> dict
         resource_type="user",
         resource_id=user_id,
     )
-    return _auth_response(user, token, expires_at)
+    response = JSONResponse(_auth_response(user, token, expires_at, csrf_token), status_code=201)
+    _set_auth_cookies(response, token, csrf_token)
+    return response
 
 
 @app.post("/api/auth/login")
-async def login_auth_user(req: AuthLoginRequest, request: Request) -> dict:
+async def login_auth_user(req: AuthLoginRequest, request: Request) -> JSONResponse:
     retry_after = _check_auth_rate_limit(request, req.identifier, scope="login")
     if retry_after is not None:
         _audit_request(request, "auth.login_rate_limited", metadata={"retry_after": retry_after})
@@ -626,6 +695,7 @@ async def login_auth_user(req: AuthLoginRequest, request: Request) -> dict:
         _audit_request(request, "auth.login_failed", metadata={"reason": "invalid_credentials"})
         raise HTTPException(401, "用户名或密码错误")
     token = new_session_token()
+    csrf_token = new_csrf_token()
     expires_at = expiry_iso(cfg.auth_session_hours)
     store.create_session(f"session_{uuid4().hex}", str(user["id"]), token_hash(token), expires_at)
     _audit_request(
@@ -635,7 +705,9 @@ async def login_auth_user(req: AuthLoginRequest, request: Request) -> dict:
         actor_user_id=str(user["id"]),
         resource_type="session",
     )
-    return _auth_response(user, token, expires_at)
+    response = JSONResponse(_auth_response(user, token, expires_at, csrf_token))
+    _set_auth_cookies(response, token, csrf_token)
+    return response
 
 
 @app.get("/api/auth/me")
@@ -650,14 +722,16 @@ async def get_auth_me(request: Request) -> dict:
 
 
 @app.post("/api/auth/logout")
-async def logout_auth_user(request: Request) -> dict:
+async def logout_auth_user(request: Request) -> JSONResponse:
     raw_token = getattr(request.state, "auth_token", "")
     if raw_token:
         store.revoke_session(token_hash(raw_token))
     principal = getattr(request.state, "principal", None)
     if principal is not None:
         _audit_request(request, "auth.logged_out", resource_type="session")
-    return {"logged_out": True}
+    response = JSONResponse({"logged_out": True})
+    _clear_auth_cookies(response)
+    return response
 
 
 @app.post("/api/auth/users", status_code=201)

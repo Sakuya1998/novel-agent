@@ -35,33 +35,33 @@
 - Produces: `new_csrf_token() -> str` and `verify_csrf_token(expected: str, actual: str) -> bool`.
 - Consumes: existing hashed server-side session storage.
 
-- [ ] **Step 1: Write failing security and API tests**
+- [x] **Step 1: Write failing security and API tests**
 
 Test token generation and constant-time equality. Test login sets both cookies; production session cookie contains `Secure`, `HttpOnly` and `SameSite=lax`; Cookie-authenticated POST without CSRF returns 403; matching header/cookie succeeds; Bearer POST remains valid; logout revokes and clears both cookies.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 Run: `$env:TEMP='D:\novel-agent\.tmp\pytest-temp'; $env:TMP=$env:TEMP; .\.venv\Scripts\python.exe -m pytest tests/test_security.py tests/test_api.py -k "cookie or csrf or bearer" -q`
 
 Expected: FAIL because no cookies or CSRF enforcement exist.
 
-- [ ] **Step 3: Add explicit cookie configuration**
+- [x] **Step 3: Add explicit cookie configuration**
 
 Add `auth_cookie_secure: bool | None = None` and derive secure mode from `APP_ENVIRONMENT=production` when unset. Add cookie names and CSRF helpers to `security.py`.
 
-- [ ] **Step 4: Implement dual authentication and CSRF middleware**
+- [x] **Step 4: Implement dual authentication and CSRF middleware**
 
 Resolve the session token from Cookie first, then Bearer. Store the chosen transport on `request.state.auth_transport`. For authenticated Cookie requests using `POST`, `PUT`, `PATCH`, or `DELETE`, compare `X-CSRF-Token` with the CSRF cookie before role/rate-limit logic; exempt `/api/auth/login` and `/api/auth/register`.
 
-- [ ] **Step 5: Set and clear cookies**
+- [x] **Step 5: Set and clear cookies**
 
 Return `JSONResponse` from login/register, set the session and CSRF cookies, and include `csrf_token` in the compatibility response. Logout revokes the chosen session and deletes both cookies with matching attributes.
 
-- [ ] **Step 6: Configure credentialed CORS**
+- [x] **Step 6: Configure credentialed CORS**
 
 Set `allow_credentials=True` and allow `X-CSRF-Token` plus `X-Backup-Password`. Keep explicit origins and the production wildcard rejection.
 
-- [ ] **Step 7: Verify focused tests**
+- [x] **Step 7: Verify focused tests**
 
 Run the command from Step 2. Expected: all selected tests pass.
 

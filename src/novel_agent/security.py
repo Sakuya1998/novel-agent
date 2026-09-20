@@ -10,6 +10,8 @@ from datetime import UTC, datetime
 
 LOCAL_TENANT_ID = "tenant_local"
 LOCAL_USER_ID = "user_local"
+SESSION_COOKIE_NAME = "novel_agent_session"
+CSRF_COOKIE_NAME = "novel_agent_csrf"
 
 
 @dataclass(frozen=True)
@@ -88,6 +90,16 @@ def new_session_token() -> str:
     return secrets.token_urlsafe(32)
 
 
+def new_csrf_token() -> str:
+    return secrets.token_urlsafe(32)
+
+
+def verify_csrf_token(expected: str, actual: str) -> bool:
+    if not expected or not actual:
+        return False
+    return hmac.compare_digest(expected, actual)
+
+
 def token_hash(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
@@ -96,4 +108,3 @@ def expiry_iso(hours: int) -> str:
     from datetime import timedelta
 
     return (datetime.now(UTC) + timedelta(hours=max(hours, 1))).replace(microsecond=0).isoformat()
-

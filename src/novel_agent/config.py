@@ -57,6 +57,7 @@ class Config(BaseSettings):
     # 认证默认关闭以兼容旧 CLI/本地单用户部署；生产环境应显式开启。
     auth_enabled: bool = False
     auth_session_hours: int = 24 * 30
+    auth_cookie_secure: bool | None = None
     auth_rate_limit_window_seconds: int = 60
     auth_rate_limit_max_attempts: int = 10
     sensitive_rate_limit_window_seconds: int = 60
@@ -68,6 +69,13 @@ class Config(BaseSettings):
     transfer_dir: str = str(BASE_DIR / "data" / "transfers")
     runtime_backup_dir: str = str(BASE_DIR / "data" / "runtime-backups")
     backup_retention_count: int = 7
+
+    @property
+    def effective_auth_cookie_secure(self) -> bool:
+        """显式配置优先；默认只在生产环境要求 HTTPS Cookie。"""
+        if self.auth_cookie_secure is not None:
+            return self.auth_cookie_secure
+        return self.app_environment == "production"
 
     # 生成控制
     max_chapter_words: int = 6000
@@ -206,4 +214,3 @@ def load_prompt(name: str) -> str:
     """加载 prompts/ 目录下的模板文件(PromptManager 便捷入口)。"""
     path = PACKAGE_DIR / "prompts" / f"{name}.txt"
     return path.read_text(encoding="utf-8")
-

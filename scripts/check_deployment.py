@@ -28,6 +28,12 @@ def main() -> int:
     alerts = yaml.safe_load((ROOT / "deploy" / "novel-agent-alerts.yml").read_text(encoding="utf-8"))
 
     require((ROOT / "src" / "novel_agent" / "security.py").is_file(), "Docker 运行所需的 security.py 不存在")
+    require("uv.lock" in dockerfile, "Dockerfile 必须复制 uv.lock")
+    require("uv sync --locked --no-dev" in dockerfile, "Dockerfile 必须从 uv.lock 安装生产依赖")
+    require(
+        "pip install --no-cache-dir -r requirements.txt" not in dockerfile,
+        "Dockerfile 不得绕过 uv.lock 从 requirements.txt 安装",
+    )
     require("COPY src ./src" in dockerfile, "Dockerfile 未复制 src 应用包")
     require("novel_agent.api.server:app" in dockerfile, "Dockerfile 未使用打包后的 API 入口")
     require("COPY scripts ./scripts" in dockerfile, "Dockerfile 未复制运行时维护脚本")

@@ -76,25 +76,25 @@ git commit -m "ci: install Python dependencies from uv lock"
 **Interfaces:**
 - Produces: a builder-created `/opt/venv` installed via `uv sync --locked --no-dev`.
 
-- [ ] **Step 1: Write the failing deployment policy test**
+- [x] **Step 1: Write the failing deployment policy test**
 
 Add a test that reads `Dockerfile` and asserts it copies `uv.lock`, contains `uv sync --locked --no-dev`, and does not contain `pip install --no-cache-dir -r requirements.txt`.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 Run: `$env:TEMP='D:\novel-agent\.tmp\pytest-temp'; $env:TMP=$env:TEMP; .\.venv\Scripts\python.exe -m pytest tests/test_config.py -k docker -q`
 
 Expected: FAIL because Docker still installs from `requirements.txt`.
 
-- [ ] **Step 3: Implement locked Docker build**
+- [x] **Step 3: Implement locked Docker build**
 
 Copy `/uv` from `ghcr.io/astral-sh/uv:0.12.1` into the builder, set `UV_PROJECT_ENVIRONMENT=/opt/venv`, copy `pyproject.toml`, `uv.lock`, README and `src`, then run `uv sync --locked --no-dev --no-editable`. Keep the current runtime stage and `/opt/venv` copy.
 
-- [ ] **Step 4: Strengthen offline deployment checks**
+- [x] **Step 4: Strengthen offline deployment checks**
 
 Require `COPY ... uv.lock`, `uv sync --locked --no-dev`, non-root runtime and the existing security markers in `scripts/check_deployment.py`.
 
-- [ ] **Step 5: Verify**
+- [x] **Step 5: Verify**
 
 Run:
 

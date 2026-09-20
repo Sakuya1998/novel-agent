@@ -1,11 +1,14 @@
 """风格档案与配置测试。"""
 
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
 from novel_agent.config import STYLE_PROFILES, Config, get_style_prompt
 
 REQUIRED_KEYS = {"name", "syntax", "sentence_length", "vocabulary", "narrative_techniques", "pacing", "examples"}
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_style_profiles_complete():
@@ -44,6 +47,14 @@ def test_production_template_enables_required_guards():
     assert cfg.auth_enabled is True
     assert "*" not in cfg.frontend_origins
     assert cfg.auth_rate_limit_max_attempts > 0
+
+
+def test_docker_build_installs_locked_production_dependencies():
+    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+
+    assert "uv.lock" in dockerfile
+    assert "uv sync --locked --no-dev" in dockerfile
+    assert "pip install --no-cache-dir -r requirements.txt" not in dockerfile
 
 
 def test_config_rejects_unknown_llm_provider():

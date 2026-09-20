@@ -2,7 +2,6 @@ import type {
   ConnectionTestResult,
   AuthSession,
   AuthStatus,
-  AuthUser,
   AuditLog,
   CanonDetail,
   CanonOperation,
@@ -36,37 +35,28 @@ import type {
 } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "";
-const AUTH_TOKEN_KEY = "novel_agent_access_token";
+const LEGACY_AUTH_TOKEN_KEY = "novel_agent_access_token";
 const AUTH_USER_KEY = "novel_agent_auth_user";
+const CSRF_COOKIE_NAME = "novel_agent_csrf";
 const REQUEST_TIMEOUT_MS = 30_000;
 const READINESS_TIMEOUT_MS = 8_000;
 
-export function getStoredAuthUser(): AuthUser | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const value = window.localStorage.getItem(AUTH_USER_KEY);
-    return value ? JSON.parse(value) as AuthUser : null;
-  } catch {
-    return null;
-  }
-}
-
-function storedAuthToken(): string {
-  return typeof window === "undefined" ? "" : window.localStorage.getItem(AUTH_TOKEN_KEY) ?? "";
-}
-
-function storeAuthSession(session: AuthSession): AuthSession {
-  if (typeof window !== "undefined") {
-    window.localStorage.setItem(AUTH_TOKEN_KEY, session.access_token);
-    window.localStorage.setItem(AUTH_USER_KEY, JSON.stringify(session.user));
-  }
-  return session;
-}
-
 export function clearStoredAuth(): void {
   if (typeof window === "undefined") return;
-  window.localStorage.removeItem(AUTH_TOKEN_KEY);
+  window.localStorage.removeItem(LEGACY_AUTH_TOKEN_KEY);
   window.localStorage.removeItem(AUTH_USER_KEY);
+}
+
+function csrfToken(): string {
+  if (typeof document === "undefined") return "";
+  const prefix = `${CSRF_COOKIE_NAME}=`;
+  const match = document.cookie.split(";").map((item) => item.trim()).find((item) => item.startsWith(prefix));
+  if (!match) return "";
+  try {
+    return decodeURIComponent(match.slice(prefix.length));
+  } catch {
+    return match.slice(prefix.length);
+  }
 }
 
 function responseError(body: unknown, status: number): string {
@@ -103,7 +93,13 @@ function requestSignal(signal?: AbortSignal | null, timeout = REQUEST_TIMEOUT_MS
 
 async function fetchApi(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   try {
-    return await fetch(input, init);
+    const headers = new Headers(init?.headers);
+    const method = (init?.method ?? "GET").toUpperCase();
+    const csrf = csrfToken();
+    if (["POST", "PUT", "PATCH", "DELETE"].includes(method) && csrf && !headers.has("X-CSRF-Token")) {
+      headers.set("X-CSRF-Token", csrf);
+    }
+    return await fetch(input, { ...init, headers, credentials: "include" });
   } catch (reason) {
     if (isAbortError(reason)) throw reason;
     if (isTimeoutError(reason)) throw new Error("请求超时，请稍后重试", { cause: reason });
@@ -112,13 +108,11 @@ async function fetchApi(input: RequestInfo | URL, init?: RequestInit): Promise<R
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const token = storedAuthToken();
   const multipart = typeof FormData !== "undefined" && init?.body instanceof FormData;
   const response = await fetchApi(`${API_BASE}${path}`, {
     ...init,
     headers: {
       ...(multipart ? {} : { "Content-Type": "application/json" }),
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(init?.headers ?? {}),
     },
   });
@@ -139,7 +133,6 @@ export async function exportNovel(
   password = "",
   metadata: { author?: string; publisher?: string; language?: string } = {},
 ): Promise<{ blob: Blob; filename: string }> {
-  const token = storedAuthToken();
   const query = new URLSearchParams({ format });
   if (metadata.author) query.set("author", metadata.author);
   if (metadata.publisher) query.set("publisher", metadata.publisher);
@@ -147,7 +140,6 @@ export async function exportNovel(
   const response = await fetchApi(`${API_BASE}/api/novels/${encodeURIComponent(id)}/export?${query.toString()}`, {
     signal: requestSignal(),
     headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(password ? { "X-Backup-Password": password } : {}),
     },
   });
@@ -160,7 +152,6 @@ export async function exportNovel(
     const completed = await waitForTransfer(payload.job.id);
     const download = await fetchApi(`${API_BASE}/api/transfers/${encodeURIComponent(completed.id)}/download`, {
       signal: requestSignal(),
-      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
     });
     if (!download.ok) {
       const body = await download.json().catch(() => ({}));
@@ -217,22 +208,16 @@ export function getNovelState(id: string): Promise<WorkbenchState> {
 }
 
 export async function loginAuth(identifier: string, password: string): Promise<AuthSession> {
-  const session = await request<AuthSession>("/api/auth/login", {
+  clearStoredAuth();
+  return request<AuthSession>("/api/auth/login", {
     method: "POST",
     body: JSON.stringify({ identifier, password }),
   });
-  return storeAuthSession(session);
 }
 
 export async function getAuthStatus(): Promise<AuthStatus> {
+  clearStoredAuth();
   const status = await request<AuthStatus>("/api/auth/status");
-  if (typeof window !== "undefined") {
-    if (status.enabled && status.user) {
-      window.localStorage.setItem(AUTH_USER_KEY, JSON.stringify(status.user));
-    } else {
-      clearStoredAuth();
-    }
-  }
   return status;
 }
 
@@ -243,11 +228,11 @@ export async function registerAuth(payload: {
   display_name: string;
   tenant_name: string;
 }): Promise<AuthSession> {
-  const session = await request<AuthSession>("/api/auth/register", {
+  clearStoredAuth();
+  return request<AuthSession>("/api/auth/register", {
     method: "POST",
     body: JSON.stringify(payload),
   });
-  return storeAuthSession(session);
 }
 
 export async function logoutAuth(): Promise<void> {
@@ -582,12 +567,10 @@ async function streamRequest(
   init: RequestInit,
   onEvent: (event: StreamEvent) => void,
 ): Promise<void> {
-  const token = storedAuthToken();
   const response = await fetchApi(`${API_BASE}${path}`, {
     ...init,
     signal: requestSignal(init?.signal),
     headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(init.headers ?? {}),
     },
   });

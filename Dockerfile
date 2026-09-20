@@ -1,14 +1,19 @@
-# ---- 构建阶段:独立 venv 安装依赖(与运行环境隔离) ----
-# 若未来依赖引入编译需求,构建工具只残留于此阶段,不进最终镜像
+# ---- 构建阶段:从锁文件创建独立 venv(与运行环境隔离) ----
+FROM ghcr.io/astral-sh/uv:0.12.1 AS uv
+
 FROM python:3.14-slim AS builder
 
+COPY --from=uv /uv /usr/local/bin/uv
+
 WORKDIR /build
-COPY requirements.txt pyproject.toml README.md ./
+ENV UV_PROJECT_ENVIRONMENT=/opt/venv \
+    UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy
+
+COPY pyproject.toml uv.lock README.md ./
 COPY src ./src
 
-RUN python -m venv /opt/venv \
-    && /opt/venv/bin/pip install --no-cache-dir -r requirements.txt \
-    && /opt/venv/bin/pip install --no-cache-dir --no-deps .
+RUN uv sync --locked --no-dev --no-editable
 
 # ---- 运行阶段:仅保留 venv 产物 + 运行所需源码 ----
 FROM python:3.14-slim

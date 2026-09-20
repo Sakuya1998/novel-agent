@@ -51,14 +51,14 @@ function errorCopy(error: string) {
 }
 
 function App() {
-  const workbench = useWorkbench();
+  const [authEnabled, setAuthEnabled] = useState<boolean>();
+  const [authUser, setAuthUser] = useState<Awaited<ReturnType<typeof getAuthStatus>>["user"]>(null);
+  const workbench = useWorkbench(authEnabled === false || (authEnabled === true && authUser !== null));
   const serviceStatus = useServiceStatus();
   const [activeDialog, setActiveDialog] = useState<DialogName>();
   const [workspaceView, setWorkspaceView] = useState<WorkspaceView>("write");
   const [readerFocus, setReaderFocus] = useState<WritingReaderFocus>();
   const [createOpen, setCreateOpen] = useState(false);
-  const [authEnabled, setAuthEnabled] = useState<boolean>();
-  const [authUser, setAuthUser] = useState<Awaited<ReturnType<typeof getAuthStatus>>["user"]>(null);
   const { novel, state, error, isStreaming, lastNode } = workbench;
   const reviewWorkflow = useReviewWorkflow({
     novelId: workbench.selectedId ?? "",
@@ -200,7 +200,7 @@ function App() {
       <EvaluationBenchmarkDialog open={activeDialog === "benchmarks"} runs={workbench.evaluationBenchmarks} onRun={workbench.runBenchmark} onClose={() => setActiveDialog(undefined)} />
       <MemoryQualityDialog open={activeDialog === "memory"} history={workbench.memoryQuality} onRefresh={workbench.loadMemoryQuality} onEvaluate={workbench.runMemoryQuality} onRebuild={workbench.rebuildMemoryIndex} onClose={() => setActiveDialog(undefined)} />
       <ImportExportDialog open={activeDialog === "transfer"} novelTitle={novel?.title ?? ""} onClose={() => setActiveDialog(undefined)} onExport={workbench.exportNovel} onImport={workbench.importNovel} />
-      <AuthDialog open={authEnabled === true && activeDialog === "auth"} currentUser={authUser} onLogin={async (identifier, password) => { const session = await loginAuth(identifier, password); window.location.reload(); return session; }} onRegister={async (payload) => { const session = await registerAuth(payload); window.location.reload(); return session; }} onLogout={async () => { await logoutAuth(); window.location.reload(); }} onClose={() => setActiveDialog(undefined)} />
+      <AuthDialog open={authEnabled === true && activeDialog === "auth"} currentUser={authUser} onLogin={async (identifier, password) => { const session = await loginAuth(identifier, password); setAuthUser(session.user); setActiveDialog(undefined); return session; }} onRegister={async (payload) => { const session = await registerAuth(payload); setAuthUser(session.user); setActiveDialog(undefined); return session; }} onLogout={async () => { await logoutAuth(); setAuthUser(null); setActiveDialog(undefined); }} onClose={() => setActiveDialog(undefined)} />
       <MonitoringDialog open={activeDialog === "monitoring"} onClose={() => setActiveDialog(undefined)} />
       <ModelSettingsDialog open={activeDialog === "settings"} isStreaming={isStreaming} onClose={() => setActiveDialog(undefined)} />
     </div>

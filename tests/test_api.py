@@ -74,6 +74,60 @@ async def test_healthz(api_env):
         assert (await c.get("/healthz")).json() == {"status": "ok"}
 
 
+async def test_readiness_reports_environment_model_configuration(api_env):
+    from httpx import ASGITransport, AsyncClient
+
+    async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
+        response = await c.get("/readyz")
+
+    assert response.status_code == 200
+    assert response.json()["checks"]["model"] == {
+        "status": "configured",
+        "source": "environment",
+    }
+
+
+async def test_readiness_reports_database_model_configuration(api_env):
+    from httpx import ASGITransport, AsyncClient
+
+    api_env.cfg.openai_api_key = ""
+    async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
+        profile = (await c.post("/api/model-settings/profiles", json={
+            "name": "Readiness OpenAI",
+            "provider": "openai",
+            "base_url": "",
+            "api_key": "readiness-key",
+            "chat_models": ["gpt-readiness"],
+            "embedding_models": ["embed-readiness"],
+        })).json()
+        routes = {
+            "creative": {"profile_id": profile["id"], "model_name": "gpt-readiness"},
+            "analysis": {"profile_id": profile["id"], "model_name": "gpt-readiness"},
+            "embedding": {"profile_id": profile["id"], "model_name": "embed-readiness"},
+        }
+        assert (await c.put("/api/model-settings/routes", json=routes)).status_code == 200
+        response = await c.get("/readyz")
+
+    assert response.status_code == 200
+    assert response.json()["checks"]["model"] == {
+        "status": "configured",
+        "source": "database",
+    }
+
+
+async def test_readiness_rejects_missing_model_configuration(api_env):
+    from httpx import ASGITransport, AsyncClient
+
+    api_env.cfg.openai_api_key = ""
+    api_env.cfg.anthropic_api_key = ""
+    async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
+        response = await c.get("/readyz")
+
+    assert response.status_code == 503
+    assert response.json()["checks"]["model"]["status"] == "unconfigured"
+    assert response.json()["checks"]["model"]["source"] == "none"
+
+
 async def test_auth_status_reflects_local_and_authenticated_modes(api_env):
     from httpx import ASGITransport, AsyncClient
 
@@ -132,6 +186,7 @@ async def test_operations_readiness_audit_and_auth_rate_limit(api_env):
             "password": "ops-password",
             "tenant_name": "运维工作区",
         })).json()
+        c.cookies.clear()
         api_env.store.clear_auth_rate_limits()
         headers = {"Authorization": f"Bearer {registered['access_token']}"}
         novel = (await c.post("/api/novels", headers=headers, json={
@@ -192,6 +247,7 @@ async def test_auth_login_tenant_isolation_and_viewer_permissions(api_env):
             "password": "bob-password",
             "tenant_name": "Bob 工作区",
         })).json()
+        c.cookies.clear()
         alice_headers = {"Authorization": f"Bearer {alice['access_token']}"}
         bob_headers = {"Authorization": f"Bearer {bob['access_token']}"}
         with sqlite3.connect(api_env.store.db_path) as conn:
@@ -242,6 +298,7 @@ async def test_auth_login_tenant_isolation_and_viewer_permissions(api_env):
         editor = (await c.post("/api/auth/login", json={
             "identifier": "viewer_auth", "password": "viewer-password",
         })).json()
+        c.cookies.clear()
         editor_headers = {"Authorization": f"Bearer {editor['access_token']}"}
         assert (await c.post("/api/novels", headers=editor_headers, json={
             "title": "编辑可写", "inspiration": "权限", "total_chapters": 1,
@@ -256,12 +313,75 @@ async def test_auth_login_tenant_isolation_and_viewer_permissions(api_env):
         viewer = (await c.post("/api/auth/login", json={
             "identifier": "viewer_auth", "password": "viewer-password",
         })).json()
+        c.cookies.clear()
         viewer_headers = {"Authorization": f"Bearer {viewer['access_token']}"}
         assert (await c.post("/api/novels", headers=viewer_headers, json={
             "title": "只读不可写", "inspiration": "权限", "total_chapters": 1,
         })).status_code == 403
         assert (await c.post("/api/auth/logout", headers=viewer_headers)).status_code == 200
         assert (await c.get("/api/auth/me", headers=viewer_headers)).status_code == 401
+
+
+async def test_cookie_session_requires_csrf_and_logout_clears_cookies(api_env):
+    from httpx import ASGITransport, AsyncClient
+
+    api_env.cfg.auth_enabled = True
+    api_env.cfg.app_environment = "production"
+    api_env.cfg.auth_cookie_secure = None
+    async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="https://t") as c:
+        registered = await c.post(
+            "/api/auth/register",
+            json={
+                "username": "cookie_owner",
+                "password": "cookie-password",
+                "tenant_name": "Cookie 工作区",
+            },
+        )
+        assert registered.status_code == 201
+        payload = registered.json()
+        assert payload["csrf_token"]
+        cookies = registered.headers.get_list("set-cookie")
+        session_cookie = next(value for value in cookies if value.startswith("novel_agent_session="))
+        csrf_cookie = next(value for value in cookies if value.startswith("novel_agent_csrf="))
+        assert "HttpOnly" in session_cookie
+        assert "Secure" in session_cookie
+        assert "SameSite=lax" in session_cookie
+        assert "HttpOnly" not in csrf_cookie
+
+        rejected = await c.post(
+            "/api/novels",
+            json={"title": "缺少 CSRF", "inspiration": "不应创建", "total_chapters": 1},
+        )
+        assert rejected.status_code == 403
+
+        csrf_token = c.cookies["novel_agent_csrf"]
+        created = await c.post(
+            "/api/novels",
+            headers={"X-CSRF-Token": csrf_token},
+            json={"title": "Cookie 创建", "inspiration": "应当成功", "total_chapters": 1},
+        )
+        assert created.status_code == 200
+
+        c.cookies.clear()
+        bearer_created = await c.post(
+            "/api/novels",
+            headers={"Authorization": f"Bearer {payload['access_token']}"},
+            json={"title": "Bearer 创建", "inspiration": "兼容客户端", "total_chapters": 1},
+        )
+        assert bearer_created.status_code == 200
+
+        login = await c.post(
+            "/api/auth/login",
+            json={"identifier": "cookie_owner", "password": "cookie-password"},
+        )
+        assert login.status_code == 200
+        csrf_token = c.cookies["novel_agent_csrf"]
+        logout = await c.post("/api/auth/logout", headers={"X-CSRF-Token": csrf_token})
+        assert logout.status_code == 200
+        cleared = logout.headers.get_list("set-cookie")
+        assert any(value.startswith("novel_agent_session=") and "Max-Age=0" in value for value in cleared)
+        assert any(value.startswith("novel_agent_csrf=") and "Max-Age=0" in value for value in cleared)
+        assert (await c.get("/api/auth/me")).status_code == 401
 
 
 async def test_model_trace_endpoint_returns_metadata_only(api_env):
@@ -1513,9 +1633,19 @@ async def test_frontend_cors_allows_vite_origin(api_env):
                 "Access-Control-Request-Method": "POST",
             },
         )
+        backup_response = await c.options(
+            "/api/novels/novel-1/export",
+            headers={
+                "Origin": "http://localhost:5173",
+                "Access-Control-Request-Method": "GET",
+                "Access-Control-Request-Headers": "x-backup-password",
+            },
+        )
 
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
+    assert backup_response.status_code == 200
+    assert "x-backup-password" in backup_response.headers["access-control-allow-headers"].lower()
 
 
 async def test_model_profile_api_never_returns_plaintext_key(api_env):

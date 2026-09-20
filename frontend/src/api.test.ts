@@ -4,6 +4,7 @@ import { createModelProfile, exportNovel, getAuthStatus, getReadiness, loginAuth
 describe("model settings API errors", () => {
   afterEach(() => {
     window.localStorage.clear();
+    document.cookie = "novel_agent_csrf=; Max-Age=0; path=/";
     vi.unstubAllGlobals();
   });
 
@@ -23,7 +24,7 @@ describe("model settings API errors", () => {
     })).rejects.toThrow("base_url: Field required");
   });
 
-  it("stores a login token and sends it on later requests", async () => {
+  it("uses credentialed cookies and CSRF without storing or sending bearer tokens", async () => {
     window.localStorage.clear();
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({
@@ -36,9 +37,17 @@ describe("model settings API errors", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await loginAuth("alice", "password-1");
+    document.cookie = "novel_agent_csrf=csrf-1; path=/";
     await createModelProfile({ name: "X", provider: "openai", base_url: "", api_key: "", clear_api_key: false, chat_models: [], embedding_models: [] });
 
-    expect((fetchMock.mock.calls[1][1] as RequestInit).headers).toMatchObject({ Authorization: "Bearer token-1" });
+    expect(window.localStorage.getItem("novel_agent_access_token")).toBeNull();
+    const loginInit = fetchMock.mock.calls[0][1] as RequestInit;
+    const mutationInit = fetchMock.mock.calls[1][1] as RequestInit;
+    expect(loginInit.credentials).toBe("include");
+    expect(mutationInit.credentials).toBe("include");
+    const mutationHeaders = new Headers(mutationInit.headers);
+    expect(mutationHeaders.get("Authorization")).toBeNull();
+    expect(mutationHeaders.get("X-CSRF-Token")).toBe("csrf-1");
   });
 
   it("clears stale browser sessions when authentication is disabled", async () => {
@@ -68,7 +77,7 @@ describe("model settings API errors", () => {
     expect(result.filename).toBe("book.zip");
     expect(fetchMock.mock.calls[0][0]).toContain("format=backup");
     expect(fetchMock.mock.calls[0][0]).not.toContain("secret");
-    expect((fetchMock.mock.calls[0][1] as RequestInit).headers).toMatchObject({ "X-Backup-Password": "secret" });
+    expect(new Headers((fetchMock.mock.calls[0][1] as RequestInit).headers).get("X-Backup-Password")).toBe("secret");
   });
 
   it("returns readiness details when the service reports not ready", async () => {

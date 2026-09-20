@@ -8,8 +8,7 @@ import { AuthDialog } from "./AuthDialog";
 afterEach(cleanup);
 
 const session: AuthSession = {
-  access_token: "token",
-  token_type: "bearer",
+  csrf_token: "csrf-token",
   expires_at: "2026-09-18T00:00:00Z",
   user: {
     id: "user-1",

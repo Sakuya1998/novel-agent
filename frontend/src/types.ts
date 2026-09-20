@@ -374,8 +374,7 @@ export interface AuthUser {
 }
 
 export interface AuthSession {
-  access_token: string;
-  token_type: "bearer";
+  csrf_token: string;
   expires_at: string;
   user: AuthUser;
 }

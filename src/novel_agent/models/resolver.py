@@ -225,6 +225,22 @@ class ModelResolver:
         if not provider_supports_embeddings(resolved.provider):
             raise ModelConfigurationError(f"{resolved.provider} 服务不能用于嵌入模型")
 
+    def configuration_status(self) -> dict[str, str]:
+        """Return the effective configuration source without contacting providers."""
+        routes = self.store.get_routes()
+        try:
+            self.validate_runtime()
+        except ModelConfigurationError as exc:
+            return {
+                "status": "unconfigured",
+                "source": "none",
+                "detail": sanitize_provider_error(exc),
+            }
+        return {
+            "status": "configured",
+            "source": "database" if routes else "environment",
+        }
+
     def chat(
         self,
         purpose: Literal["creative", "analysis"],

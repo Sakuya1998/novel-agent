@@ -59,7 +59,7 @@ rg -n "uv sync --locked|uv run --locked|uv export --locked" .github/workflows/ci
 
 Expected: YAML parses and all three locked commands are present.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add .github/workflows/ci.yml README.md
@@ -110,7 +110,7 @@ $env:FRONTEND_ORIGINS='http://localhost:5173'
 
 Expected: tests pass and deployment checks print `deployment checks passed`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add Dockerfile scripts/check_deployment.py tests/test_config.py

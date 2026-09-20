@@ -65,7 +65,7 @@ Set `allow_credentials=True` and allow `X-CSRF-Token` plus `X-Backup-Password`. 
 
 Run the command from Step 2. Expected: all selected tests pass.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```powershell
 git add src/novel_agent/config.py src/novel_agent/security.py src/novel_agent/api/server.py tests/test_security.py tests/test_api.py .env.example .env.production.example
@@ -114,7 +114,7 @@ npm run build
 
 Expected: all commands pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add frontend/src/types.ts frontend/src/api.ts frontend/src/api.test.ts frontend/src/App.tsx
@@ -166,7 +166,7 @@ Run: `npm run test:e2e`.
 
 Expected: desktop and mobile Chromium projects pass without console errors.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```powershell
 git add frontend/package.json frontend/package-lock.json frontend/playwright.config.ts frontend/e2e/auth-and-backup.spec.ts scripts/e2e_server.py .github/workflows/ci.yml .gitignore
@@ -205,7 +205,7 @@ Run on `workflow_dispatch` and weekly schedule. Skip cleanly when repository sec
 
 Document required secret names and cost bounds. Run the no-key test and Ruff against the script.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add .github/workflows/real-model-e2e.yml scripts/real_model_smoke.py tests/test_model_resolver.py README.md
@@ -217,7 +217,7 @@ git commit -m "test: add optional real-model compatibility smoke"
 **Files:**
 - Verify only.
 
-- [ ] **Step 1: Backend quality gates**
+- [x] **Step 1: Backend quality gates**
 
 ```powershell
 $env:TEMP='D:\novel-agent\.tmp\pytest-temp'
@@ -228,7 +228,7 @@ $env:TMP=$env:TEMP
 .\.venv\Scripts\python.exe -m scripts.check_deployment
 ```
 
-- [ ] **Step 2: Frontend quality gates**
+- [x] **Step 2: Frontend quality gates**
 
 ```powershell
 npm test
@@ -237,6 +237,6 @@ npm run build
 npm run test:e2e
 ```
 
-- [ ] **Step 3: Review change scope**
+- [x] **Step 3: Review change scope**
 
 Run `git diff --check`, `git status --short`, and `git log --oneline main..HEAD`. Confirm runtime databases, secrets, generated reports and browser artifacts are untracked or ignored.

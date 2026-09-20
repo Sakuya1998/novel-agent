@@ -84,25 +84,25 @@ git commit -m "feat: add secure cookie sessions and CSRF"
 - Consumes: session and CSRF cookies from Task 1.
 - Produces: all API fetches use `credentials: 'include'`; mutation requests send `X-CSRF-Token` from the CSRF cookie.
 
-- [ ] **Step 1: Replace the old passing token test with failing cookie tests**
+- [x] **Step 1: Replace the old passing token test with failing cookie tests**
 
 Assert login does not write `novel_agent_access_token`; subsequent requests contain `credentials: 'include'`, no Authorization header, and mutations include `X-CSRF-Token` when the CSRF cookie is present.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 Run: `npm test -- src/api.test.ts` in `frontend`.
 
 Expected: FAIL because the client still stores and sends the Bearer token.
 
-- [ ] **Step 3: Implement the cookie client**
+- [x] **Step 3: Implement the cookie client**
 
 Remove access-token storage and `storedAuthToken()`. Add `credentials: 'include'` to API, streaming, export and download requests. Parse only `novel_agent_csrf` from `document.cookie`; add `X-CSRF-Token` to mutating requests. Keep stale token removal during startup.
 
-- [ ] **Step 4: Remove reload-dependent login handling**
+- [x] **Step 4: Remove reload-dependent login handling**
 
 After login/register, update `authUser` from the response and close the dialog. After logout, clear `authUser`; do not rely on a full page reload to establish cookie state.
 
-- [ ] **Step 5: Verify frontend checks**
+- [x] **Step 5: Verify frontend checks**
 
 Run:
 

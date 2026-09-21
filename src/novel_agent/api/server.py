@@ -3304,7 +3304,8 @@ async def readyz() -> JSONResponse:
         }
     except Exception as exc:
         checks["schema"] = {"status": "error", "detail": type(exc).__name__}
-    healthy = all(item["status"] in {"ok", "configured"} for item in checks.values())
+    infrastructure_checks = ("sqlite", "checkpoint", "chroma", "schema")
+    healthy = all(checks[name]["status"] == "ok" for name in infrastructure_checks)
     payload = {"status": "ready" if healthy else "not_ready", "checks": checks}
     return JSONResponse(payload, status_code=200 if healthy else 503)
 

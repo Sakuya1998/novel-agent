@@ -10,10 +10,25 @@ ENV UV_PROJECT_ENVIRONMENT=/opt/venv \
     UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy
 
+# Optional regional mirror for locked installs. When set, dependencies are
+# exported from uv.lock with hashes and installed through the configured index;
+# the default path remains uv sync --locked for CI and non-mirror builds.
+ARG PYPI_INDEX_URL=""
+ENV PYPI_INDEX_URL=${PYPI_INDEX_URL}
+
 COPY pyproject.toml uv.lock README.md ./
 COPY src ./src
 
-RUN uv sync --locked --no-dev --no-editable
+RUN if [ -n "$PYPI_INDEX_URL" ]; then \
+      uv export --frozen --no-dev --no-emit-project --format requirements-txt > /tmp/requirements.txt \
+      && uv venv "$UV_PROJECT_ENVIRONMENT" --python /usr/local/bin/python \
+      && uv pip install --python "$UV_PROJECT_ENVIRONMENT/bin/python" \
+           --index-url "$PYPI_INDEX_URL" --require-hashes -r /tmp/requirements.txt \
+      && uv pip install --python "$UV_PROJECT_ENVIRONMENT/bin/python" \
+           --index-url "$PYPI_INDEX_URL" --no-deps .; \
+    else \
+      uv sync --locked --no-dev --no-editable; \
+    fi
 
 # ---- 运行阶段:仅保留 venv 产物 + 运行所需源码 ----
 FROM python:3.14-slim

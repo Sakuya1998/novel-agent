@@ -31,6 +31,11 @@ def main() -> int:
     require("uv.lock" in dockerfile, "Dockerfile 必须复制 uv.lock")
     require("uv sync --locked --no-dev" in dockerfile, "Dockerfile 必须从 uv.lock 安装生产依赖")
     require(
+        "uv export --frozen --no-dev --no-emit-project --format requirements-txt" in dockerfile,
+        "Dockerfile 的镜像源路径必须从 uv.lock 导出依赖",
+    )
+    require("--require-hashes" in dockerfile, "Dockerfile 的镜像源路径必须保留哈希校验")
+    require(
         "pip install --no-cache-dir -r requirements.txt" not in dockerfile,
         "Dockerfile 不得绕过 uv.lock 从 requirements.txt 安装",
     )

@@ -490,6 +490,17 @@ docker compose up --build
 # 浏览器访问 http://localhost:5173
 ```
 
+如果服务器访问 PyPI 较慢，可在 `.env` 中为 Docker 构建指定镜像源，例如阿里云：
+
+```dotenv
+PYPI_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
+```
+
+该选项只影响镜像构建下载；Dockerfile 仍以 `uv.lock` 为版本和哈希来源，使用
+`uv export --frozen` 导出锁定依赖后通过指定索引安装，不会重新解析或升级依赖。留空时使用默认的
+`uv sync --locked` 路径。镜像源必须提供标准 PEP 503 simple API；如果某个锁定版本在镜像中不可用，
+构建会失败而不会静默换版本。
+
 Compose 会强制 API 使用 `APP_ENVIRONMENT=production`；若认证未开启、认证限流配置无效，或
 `FRONTEND_ORIGINS` 包含 `*`，API 会拒绝启动。生产前端由 Nginx 托管静态资源，并将 `/api`、
 `/healthz` 和 `/readyz` 反向代理到 FastAPI。Nginx 会传递真实客户端地址，用于登录限流和审计。

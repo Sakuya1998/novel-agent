@@ -57,6 +57,15 @@ def test_docker_build_installs_locked_production_dependencies():
     assert "pip install --no-cache-dir -r requirements.txt" not in dockerfile
 
 
+def test_docker_build_can_use_configured_python_index_without_unlocking():
+    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+
+    assert 'ARG PYPI_INDEX_URL=""' in dockerfile
+    assert "uv export --frozen --no-dev --no-emit-project --format requirements-txt" in dockerfile
+    assert "--require-hashes" in dockerfile
+    assert "PYPI_INDEX_URL" in dockerfile
+
+
 def test_config_rejects_unknown_llm_provider():
     with pytest.raises(ValidationError):
         Config(llm_provider="unknown")

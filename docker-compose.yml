@@ -1,6 +1,9 @@
 services:
   api:
-    build: .
+    build:
+      context: .
+      args:
+        PYPI_INDEX_URL: ${PYPI_INDEX_URL:-}
     restart: unless-stopped
     init: true
     env_file:

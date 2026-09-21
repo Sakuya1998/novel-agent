@@ -17,8 +17,10 @@ from uuid import uuid4
 from weakref import WeakValueDictionary
 
 from fastapi import FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.types import Command
 from pydantic import BaseModel, ConfigDict, Field
@@ -33,6 +35,8 @@ from novel_agent.agents.plot_planner import validate_outline
 from novel_agent.agents.quality_evaluator import QualityEvaluatorAgent
 from novel_agent.agents.scene_planner import normalize_scene_plan
 from novel_agent.api.model_settings import router as model_settings_router
+from novel_agent.api.errors import http_exception_handler, validation_exception_handler
+from novel_agent.api.v1 import router as api_v1_router
 from novel_agent.config import Config, validate_production_config
 from novel_agent.graph.builder import build_graph
 from novel_agent.graph.state import create_initial_state
@@ -178,6 +182,8 @@ async def lifespan(fastapi_app: FastAPI):
 
 
 app = FastAPI(title="Multi-Agent 小说创作系统 API", version="1.0.0", lifespan=lifespan)
+app.add_exception_handler(StarletteHTTPException, http_exception_handler)
+app.add_exception_handler(RequestValidationError, validation_exception_handler)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[origin.strip() for origin in cfg.frontend_origins.split(",") if origin.strip()],
@@ -186,6 +192,21 @@ app.add_middleware(
     allow_headers=["Content-Type", "Authorization", "X-Backup-Password", "X-CSRF-Token"],
 )
 app.include_router(model_settings_router)
+app.include_router(api_v1_router)
+
+
+@app.middleware("http")
+async def versioned_api_headers(request: Request, call_next):
+    request.state.api_version = "v1" if request.url.path == "/api/v1" or request.url.path.startswith("/api/v1/") else "legacy"
+    request.state.request_id = request.headers.get("X-Request-ID", "") or f"req_{uuid4().hex}"
+    if request.state.api_version == "v1" and request.url.path.startswith("/api/v1/"):
+        request.scope["path"] = "/api" + request.url.path[len("/api/v1"):]
+        request.scope["raw_path"] = request.scope["path"].encode("utf-8")
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = request.state.request_id
+    if request.state.api_version == "v1":
+        response.headers["X-API-Version"] = "v1"
+    return response
 
 
 def _local_principal() -> Principal:
@@ -305,7 +326,16 @@ def _observe_request(metrics: dict[str, object] | None, started: float, status_c
 @app.middleware("http")
 async def authenticate_request(request: Request, call_next):
     path = request.url.path
-    public = path in {"/healthz", "/api/auth/status", "/api/auth/register", "/api/auth/login"}
+    public = path in {
+        "/healthz",
+        "/api/auth/status",
+        "/api/auth/register",
+        "/api/auth/login",
+        "/api/v1",
+        "/api/v1/auth/status",
+        "/api/v1/auth/register",
+        "/api/v1/auth/login",
+    }
     started = time.perf_counter()
     metrics = getattr(app.state, "metrics", None)
     if isinstance(metrics, dict):

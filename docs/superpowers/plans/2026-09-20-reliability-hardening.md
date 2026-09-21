@@ -81,13 +81,16 @@ Expected: FAIL because `/readyz` only checks environment keys and reports `fallb
 
 Add `configuration_status()` to `ModelResolver`. It must call `validate_runtime()` without provider requests, return database when routes exist and validate, environment when routes are empty and fallback validates, and `unconfigured/none` with a sanitized detail on `ModelConfigurationError`.
 
-Update `/readyz` to place that object in `checks['model']` and treat only `ok` or `configured` as healthy.
+Update `/readyz` to place that object in `checks['model']` for diagnostics, while using only SQLite,
+checkpoint, Chroma, and schema checks to determine infrastructure readiness.
 
 - [x] **Step 4: Keep Compose smoke configuration explicit**
 
-In the Compose smoke step, set `OPENAI_API_KEY=test-readiness-key` so `.env.production.example` can remain secret-free while readiness has a syntactically complete environment fallback.
+The Compose smoke step may keep a complete environment fallback for exercising model configuration,
+but it is no longer required for the container health check.
 
-Document that `/readyz` returns 503 until model routes or environment fallback are configured.
+Document that `/readyz` can report `ready` before model routes are configured, while exposing
+`checks.model.status=unconfigured` until a route or environment fallback is saved.
 
 - [x] **Step 5: Verify focused and full checks**
 

@@ -403,9 +403,10 @@ tenant 隔离；跨 tenant 的资源 ID 查询统一返回 404。角色权限为
 `X-CSRF-Token` 请求头；浏览器不在 Web Storage 保存访问令牌。Bearer 认证仍保留给 CLI 和旧 API 客户端。
 
 运行状态接口分为：`GET /healthz` 仅表示进程存活并保持 `{ "status": "ok" }` 兼容返回；
-`GET /readyz` 检查 SQLite、LangGraph checkpoint、Chroma 目录和有效模型配置；数据库中的三类模型
-路由优先，未保存路由时才检查环境回退。两者均不完整时返回 HTTP 503 和 `not_ready`，但不会调用外部
-模型服务；
+`GET /readyz` 检查 SQLite、LangGraph checkpoint、Chroma 目录和 schema migration；模型配置状态也会
+作为 `checks.model` 诊断信息返回，但不会阻止容器就绪。数据库中的三类模型路由优先，未保存路由时才
+检查环境回退。存储、checkpoint、Chroma 或 schema 未就绪时返回 HTTP 503 和 `not_ready`，但不会调用
+外部模型服务；模型未配置时 API 仍可启动，真正执行创作或评测时会返回明确的模型配置错误。
 `GET /metrics` 输出轻量 Prometheus 风格的请求、失败、活动流和审计写入失败计数。工作台顶栏的
 “运行状态与审计”按钮提供同一租户的只读视图，其中 `/api/monitoring/summary` 返回后台创作任务、
 传输任务和模型调用的聚合计数，不包含正文或密钥。

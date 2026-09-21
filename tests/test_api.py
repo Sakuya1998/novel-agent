@@ -115,7 +115,7 @@ async def test_readiness_reports_database_model_configuration(api_env):
     }
 
 
-async def test_readiness_rejects_missing_model_configuration(api_env):
+async def test_readiness_allows_missing_model_configuration(api_env):
     from httpx import ASGITransport, AsyncClient
 
     api_env.cfg.openai_api_key = ""
@@ -123,7 +123,8 @@ async def test_readiness_rejects_missing_model_configuration(api_env):
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
         response = await c.get("/readyz")
 
-    assert response.status_code == 503
+    assert response.status_code == 200
+    assert response.json()["status"] == "ready"
     assert response.json()["checks"]["model"]["status"] == "unconfigured"
     assert response.json()["checks"]["model"]["source"] == "none"
 

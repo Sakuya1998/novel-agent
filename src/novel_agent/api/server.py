@@ -19,7 +19,7 @@ from weakref import WeakValueDictionary
 from fastapi import FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.types import Command
@@ -35,7 +35,8 @@ from novel_agent.agents.plot_planner import validate_outline
 from novel_agent.agents.quality_evaluator import QualityEvaluatorAgent
 from novel_agent.agents.scene_planner import normalize_scene_plan
 from novel_agent.api.model_settings import router as model_settings_router
-from novel_agent.api.errors import http_exception_handler, validation_exception_handler
+from novel_agent.api.errors import error_response, http_exception_handler, validation_exception_handler
+from novel_agent.api.pagination import paginate
 from novel_agent.api.v1 import router as api_v1_router
 from novel_agent.config import Config, validate_production_config
 from novel_agent.graph.builder import build_graph
@@ -193,6 +194,38 @@ app.add_middleware(
 )
 app.include_router(model_settings_router)
 app.include_router(api_v1_router)
+
+
+_idempotency_records: dict[str, tuple[str, dict]] = {}
+
+
+def _is_v1(request: Request) -> bool:
+    return getattr(request.state, "api_version", "legacy") == "v1"
+
+
+def _idempotency_lookup(request: Request, key: str | None, fingerprint: str) -> dict | None:
+    if not key or not _is_v1(request):
+        return None
+    record_key = f"{request.method}:{request.url.path}:{key}"
+    previous = _idempotency_records.get(record_key)
+    if previous is None:
+        return None
+    if previous[0] != fingerprint:
+        raise HTTPException(409, "Idempotency-Key 已用于不同请求")
+    return previous[1]
+
+
+def _idempotency_store(request: Request, key: str | None, fingerprint: str, result: dict) -> None:
+    if key and _is_v1(request):
+        _idempotency_records[f"{request.method}:{request.url.path}:{key}"] = (fingerprint, result)
+
+
+def _novel_etag(novel: dict) -> str:
+    return f'"novel-{novel["id"]}-v{int(novel.get("creative_brief_version", 1) or 1)}"'
+
+
+def _job_fingerprint(action: str, payload: object) -> str:
+    return json.dumps({"action": action, "payload": payload}, ensure_ascii=False, sort_keys=True, default=str)
 
 
 @app.middleware("http")
@@ -844,9 +877,17 @@ async def update_auth_user_role(user_id: str, req: RoleUpdateRequest, request: R
 
 
 @app.post("/api/novels")
-async def create_novel(req: CreateNovelRequest) -> dict:
+async def create_novel(
+    req: CreateNovelRequest,
+    request: Request,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key", max_length=200),
+) -> dict:
+    fingerprint = json.dumps(req.model_dump(mode="json"), ensure_ascii=False, sort_keys=True)
+    replay = _idempotency_lookup(request, idempotency_key, fingerprint)
+    if replay is not None:
+        return replay
     novel_id = f"novel_{uuid4().hex[:8]}"
-    return store.create_novel(
+    result = store.create_novel(
         novel_id,
         req.title,
         req.genre,
@@ -856,11 +897,23 @@ async def create_novel(req: CreateNovelRequest) -> dict:
         req.planning_review_enabled,
         normalize_creative_brief(req.creative_brief.model_dump()),
     )
+    _idempotency_store(request, idempotency_key, fingerprint, result)
+    return result
 
 
 @app.get("/api/novels")
-async def list_novels() -> list[dict]:
-    return store.list_novels()
+async def list_novels(
+    request: Request,
+    limit: int = Query(default=50, ge=1, le=100),
+    cursor: str | None = Query(default=None, max_length=500),
+) -> list[dict] | dict:
+    novels = store.list_novels()
+    if not _is_v1(request):
+        return novels
+    try:
+        return paginate(novels, limit=limit, cursor=cursor)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
 
 
 async def _persist_imported_payload(
@@ -1193,11 +1246,13 @@ async def delete_novel(novel_id: str, request: Request) -> dict:
 
 
 @app.get("/api/novels/{novel_id}")
-async def get_novel(novel_id: str) -> dict:
+async def get_novel(novel_id: str, request: Request, response: Response) -> dict:
     novel = store.get_novel(novel_id)
     if not novel:
         raise HTTPException(404, "小说不存在")
     novel["chapters"] = store.get_all_chapters(novel_id)
+    if _is_v1(request):
+        response.headers["ETag"] = _novel_etag(novel)
     return novel
 
 
@@ -1334,6 +1389,9 @@ async def list_creative_brief_versions(novel_id: str) -> list[dict]:
 async def update_novel_creative_brief(
     novel_id: str,
     req: CreativeBriefUpdateRequest,
+    request: Request,
+    response: Response,
+    if_match: str | None = Header(default=None, alias="If-Match", max_length=200),
 ) -> dict:
     novel = store.get_novel(novel_id)
     if not novel:
@@ -1349,6 +1407,8 @@ async def update_novel_creative_brief(
         if not novel:
             raise HTTPException(404, "小说不存在")
         current_version = int(novel.get("creative_brief_version", 1) or 1)
+        if _is_v1(request) and if_match is not None and if_match != _novel_etag(novel):
+            raise HTTPException(412, "作品版本已更新，请重新读取后再提交")
         if req.expected_version is not None and req.expected_version != current_version:
             raise HTTPException(
                 409,
@@ -1371,7 +1431,7 @@ async def update_novel_creative_brief(
             stale_candidates = 0
             snapshot = await _ensure_checkpoint_creative_brief(novel_id, updated)
         values = snapshot.values or {}
-        return {
+        result = {
             **updated,
             "changed": changed,
             "stale_candidate_count": stale_candidates,
@@ -1379,6 +1439,9 @@ async def update_novel_creative_brief(
                 values.get("creative_brief_review_required", False)
             ),
         }
+        if _is_v1(request):
+            response.headers["ETag"] = _novel_etag(updated)
+        return result
     finally:
         lock.release()
 
@@ -2948,6 +3011,10 @@ def _create_and_schedule_job(
     action: str,
     request: dict,
     payload: object,
+    *,
+    api_request: Request | None = None,
+    idempotency_key: str | None = None,
+    fingerprint: str | None = None,
 ) -> dict:
     _validate_model_runtime()
     try:
@@ -2962,23 +3029,60 @@ def _create_and_schedule_job(
     except ValueError as exc:
         raise HTTPException(409, str(exc)) from exc
     _schedule_run_job(job, payload)
+    if api_request is not None:
+        _idempotency_store(
+            api_request,
+            idempotency_key,
+            fingerprint or _job_fingerprint(action, request),
+            job,
+        )
     return job
 
 
 @app.post("/api/novels/{novel_id}/jobs/run", status_code=202)
-async def create_run_job(novel_id: str) -> dict:
+async def create_run_job(
+    novel_id: str,
+    request: Request,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key", max_length=200),
+) -> dict:
+    request_payload: dict = {}
+    fingerprint = _job_fingerprint("run", request_payload)
+    replay = _idempotency_lookup(request, idempotency_key, fingerprint)
+    if replay is not None:
+        return replay
     payload = await _prepare_run_job(novel_id)
-    return _create_and_schedule_job(novel_id, "run", {}, payload)
+    return _create_and_schedule_job(
+        novel_id,
+        "run",
+        request_payload,
+        payload,
+        api_request=request,
+        idempotency_key=idempotency_key,
+        fingerprint=fingerprint,
+    )
 
 
 @app.post("/api/novels/{novel_id}/jobs/resume", status_code=202)
-async def create_resume_job(novel_id: str, req: ResumeRequest) -> dict:
+async def create_resume_job(
+    novel_id: str,
+    req: ResumeRequest,
+    request: Request,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key", max_length=200),
+) -> dict:
+    request_payload = req.model_dump(exclude_none=True)
+    fingerprint = _job_fingerprint("resume", request_payload)
+    replay = _idempotency_lookup(request, idempotency_key, fingerprint)
+    if replay is not None:
+        return replay
     payload = await _prepare_resume_job(novel_id, req)
     return _create_and_schedule_job(
         novel_id,
         "resume",
-        req.model_dump(exclude_none=True),
+        request_payload,
         payload,
+        api_request=request,
+        idempotency_key=idempotency_key,
+        fingerprint=fingerprint,
     )
 
 
@@ -3031,10 +3135,27 @@ async def create_candidate_generation_job(
 
 
 @app.post("/api/novels/{novel_id}/jobs/canon", status_code=202)
-async def create_canon_job(novel_id: str, req: CanonOperationRequest) -> dict:
+async def create_canon_job(
+    novel_id: str,
+    req: CanonOperationRequest,
+    request: Request,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key", max_length=200),
+) -> dict:
     payload = await _prepare_canon_job(novel_id, req)
     operation = req.model_dump(exclude_unset=True)
-    return _create_and_schedule_job(novel_id, "canon_update", operation, payload)
+    fingerprint = _job_fingerprint("canon_update", operation)
+    replay = _idempotency_lookup(request, idempotency_key, fingerprint)
+    if replay is not None:
+        return replay
+    return _create_and_schedule_job(
+        novel_id,
+        "canon_update",
+        operation,
+        payload,
+        api_request=request,
+        idempotency_key=idempotency_key,
+        fingerprint=fingerprint,
+    )
 
 
 @app.post("/api/novels/{novel_id}/jobs/book-revision", status_code=202)

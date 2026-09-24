@@ -237,6 +237,7 @@
 
 - [x] 保留已有写作、规划、设定、质量、评测、版本、导入导出和模型路由能力；旧工作台组件继续由应用壳层装配。
 - [ ] 把当前弹窗功能迁移为页面级导航，保留必要的短流程确认弹窗。
+- [x] 长流程工具已可通过 `/novels/:novelId/tools/{brief,canon,traces,benchmarks,memory}` 深链接打开并在直接访问时加载所需数据；工具组件仍沿用已有操作面板，后续需移除弹窗外壳。
 - [x] 任务流统一使用 job API，支持刷新恢复、取消、失败重试和权限变化；新增 `useJobRecovery` 并保留 `useRunJob` 的断线重连。
 - [x] 所有作品查询和变更都绑定当前 workspace context：工作台在 workspace 切换时清理旧作品状态并重新加载，新增 `novelQueries` 统一拒绝无 workspace 的查询。
 

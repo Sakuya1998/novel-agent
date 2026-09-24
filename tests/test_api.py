@@ -92,7 +92,7 @@ async def test_readiness_reports_database_model_configuration(api_env):
 
     api_env.cfg.openai_api_key = ""
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
-        profile = (await c.post("/api/model-settings/profiles", json={
+        profile = (await c.post("/api/v1/model-settings/profiles", json={
             "name": "Readiness OpenAI",
             "provider": "openai",
             "base_url": "",
@@ -105,7 +105,7 @@ async def test_readiness_reports_database_model_configuration(api_env):
             "analysis": {"profile_id": profile["id"], "model_name": "gpt-readiness"},
             "embedding": {"profile_id": profile["id"], "model_name": "embed-readiness"},
         }
-        assert (await c.put("/api/model-settings/routes", json=routes)).status_code == 200
+        assert (await c.put("/api/v1/model-settings/routes", json=routes)).status_code == 200
         response = await c.get("/readyz")
 
     assert response.status_code == 200
@@ -133,21 +133,21 @@ async def test_auth_status_reflects_local_and_authenticated_modes(api_env):
     from httpx import ASGITransport, AsyncClient
 
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
-        local = (await c.get("/api/auth/status")).json()
+        local = (await c.get("/api/v1/auth/status")).json()
         assert local["enabled"] is False
         assert local["user"]["tenant_id"] == "tenant_local"
 
         api_env.cfg.auth_enabled = True
-        anonymous = (await c.get("/api/auth/status")).json()
+        anonymous = (await c.get("/api/v1/auth/status")).json()
         assert anonymous == {"enabled": True, "user": None}
 
-        registered = (await c.post("/api/auth/register", json={
+        registered = (await c.post("/api/v1/auth/register", json={
             "username": "status_owner",
             "password": "status-password",
             "tenant_name": "状态工作区",
         })).json()
         authenticated = (await c.get(
-            "/api/auth/status",
+            "/api/v1/auth/status",
             headers={"Authorization": f"Bearer {registered['access_token']}"},
         )).json()
         assert authenticated["enabled"] is True
@@ -182,7 +182,7 @@ async def test_operations_readiness_audit_and_auth_rate_limit(api_env):
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
         readiness = await c.get("/readyz")
         metrics = await c.get("/metrics")
-        registered = (await c.post("/api/auth/register", json={
+        registered = (await c.post("/api/v1/auth/register", json={
             "username": "ops_owner",
             "password": "ops-password",
             "tenant_name": "运维工作区",
@@ -190,25 +190,25 @@ async def test_operations_readiness_audit_and_auth_rate_limit(api_env):
         c.cookies.clear()
         api_env.store.clear_auth_rate_limits()
         headers = {"Authorization": f"Bearer {registered['access_token']}"}
-        novel = (await c.post("/api/novels", headers=headers, json={
+        novel = (await c.post("/api/v1/novels", headers=headers, json={
             "title": "审计作品", "inspiration": "验证操作审计", "total_chapters": 1,
         })).json()
         api_env.store.create_run_job("job-monitoring", novel["id"], "run", {})
         api_env.store.clear_auth_rate_limits()
-        audit = await c.get("/api/audit/logs", headers=headers)
-        summary = await c.get("/api/monitoring/summary", headers=headers)
-        first_export = await c.get(f"/api/novels/{novel['id']}/export?format=txt", headers=headers)
-        limited_export = await c.get(f"/api/novels/{novel['id']}/export?format=txt", headers=headers)
-        first = await c.post("/api/auth/login", json={
+        audit = await c.get("/api/v1/audit/logs", headers=headers)
+        summary = await c.get("/api/v1/monitoring/summary", headers=headers)
+        first_export = await c.get(f"/api/v1/novels/{novel['id']}/export?format=txt", headers=headers)
+        limited_export = await c.get(f"/api/v1/novels/{novel['id']}/export?format=txt", headers=headers)
+        first = await c.post("/api/v1/auth/login", json={
             "identifier": "ops_owner", "password": "wrong-password",
         })
-        second = await c.post("/api/auth/login", json={
+        second = await c.post("/api/v1/auth/login", json={
             "identifier": "ops_owner", "password": "wrong-password",
         })
-        third = await c.post("/api/auth/login", json={
+        third = await c.post("/api/v1/auth/login", json={
             "identifier": "ops_owner", "password": "wrong-password",
         })
-        limited = await c.post("/api/auth/login", json={
+        limited = await c.post("/api/v1/auth/login", json={
             "identifier": "ops_owner", "password": "wrong-password",
         })
 
@@ -236,13 +236,13 @@ async def test_auth_login_tenant_isolation_and_viewer_permissions(api_env):
     from httpx import ASGITransport, AsyncClient
     api_env.cfg.auth_enabled = True
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
-        alice = (await c.post("/api/auth/register", json={
+        alice = (await c.post("/api/v1/auth/register", json={
             "username": "alice_auth",
             "email": "alice@example.test",
             "password": "alice-password",
             "tenant_name": "Alice 工作区",
         })).json()
-        bob = (await c.post("/api/auth/register", json={
+        bob = (await c.post("/api/v1/auth/register", json={
             "username": "bob_auth",
             "email": "bob@example.test",
             "password": "bob-password",
@@ -258,21 +258,21 @@ async def test_auth_login_tenant_isolation_and_viewer_permissions(api_env):
             ).fetchone()[0]
         assert stored_token != alice["access_token"]
         assert len(stored_token) == 64
-        created = await c.post("/api/novels", headers=alice_headers, json={
+        created = await c.post("/api/v1/novels", headers=alice_headers, json={
             "title": "Alice 的作品", "genre": "科幻", "inspiration": "隔离测试", "total_chapters": 1,
         })
         assert created.status_code == 200
         novel_id = created.json()["id"]
 
-        assert (await c.get("/api/auth/me", headers=alice_headers)).json()["user"]["username"] == "alice_auth"
-        assert (await c.get("/api/novels", headers=bob_headers)).json() == []
-        assert (await c.get(f"/api/novels/{novel_id}", headers=bob_headers)).status_code == 404
+        assert (await c.get("/api/v1/auth/me", headers=alice_headers)).json()["user"]["username"] == "alice_auth"
+        assert (await c.get("/api/v1/novels", headers=bob_headers)).json()["items"] == []
+        assert (await c.get(f"/api/v1/novels/{novel_id}", headers=bob_headers)).status_code == 404
         job = api_env.store.create_run_job("job-auth-scope", novel_id, "run", {})
-        assert (await c.get(f"/api/jobs/{job['id']}", headers=bob_headers)).status_code == 404
-        benchmark = await c.post("/api/evaluations/benchmarks", headers=alice_headers, json={})
+        assert (await c.get(f"/api/v1/jobs/{job['id']}", headers=bob_headers)).status_code == 404
+        benchmark = await c.post("/api/v1/evaluations/benchmarks", headers=alice_headers, json={})
         assert benchmark.status_code == 200
-        assert (await c.get("/api/evaluations/benchmarks", headers=bob_headers)).json() == []
-        profile = await c.post("/api/model-settings/profiles", headers=alice_headers, json={
+        assert (await c.get("/api/v1/evaluations/benchmarks", headers=bob_headers)).json() == []
+        profile = await c.post("/api/v1/model-settings/profiles", headers=alice_headers, json={
             "name": "Alice 模型",
             "provider": "openai",
             "base_url": "",
@@ -281,12 +281,12 @@ async def test_auth_login_tenant_isolation_and_viewer_permissions(api_env):
             "embedding_models": ["embed-test"],
         })
         assert profile.status_code == 201
-        assert (await c.get("/api/model-settings", headers=bob_headers)).json()["profiles"] == []
-        assert (await c.post("/api/novels", headers={"Authorization": "Bearer invalid"}, json={
+        assert (await c.get("/api/v1/model-settings", headers=bob_headers)).json()["profiles"] == []
+        assert (await c.post("/api/v1/novels", headers={"Authorization": "Bearer invalid"}, json={
             "title": "不应创建", "inspiration": "无",
         })).status_code == 401
 
-        member = (await c.post("/api/auth/users", headers=alice_headers, json={
+        member = (await c.post("/api/v1/auth/users", headers=alice_headers, json={
             "username": "viewer_auth",
             "email": "viewer@example.test",
             "password": "viewer-password",
@@ -294,33 +294,33 @@ async def test_auth_login_tenant_isolation_and_viewer_permissions(api_env):
             "role": "editor",
         })).json()
         viewer_id = member["user"]["id"]
-        members = (await c.get("/api/auth/users", headers=alice_headers)).json()["users"]
+        members = (await c.get("/api/v1/auth/users", headers=alice_headers)).json()["users"]
         assert {item["username"] for item in members} == {"alice_auth", "viewer_auth"}
-        editor = (await c.post("/api/auth/login", json={
+        editor = (await c.post("/api/v1/auth/login", json={
             "identifier": "viewer_auth", "password": "viewer-password",
         })).json()
         c.cookies.clear()
         editor_headers = {"Authorization": f"Bearer {editor['access_token']}"}
-        assert (await c.post("/api/novels", headers=editor_headers, json={
+        assert (await c.post("/api/v1/novels", headers=editor_headers, json={
             "title": "编辑可写", "inspiration": "权限", "total_chapters": 1,
         })).status_code == 200
-        assert (await c.delete(f"/api/novels/{novel_id}", headers=editor_headers)).status_code == 403
+        assert (await c.delete(f"/api/v1/novels/{novel_id}", headers=editor_headers)).status_code == 403
         updated = await c.put(
-            f"/api/auth/users/{viewer_id}/role",
+            f"/api/v1/auth/users/{viewer_id}/role",
             headers=alice_headers,
             json={"role": "viewer"},
         )
         assert updated.status_code == 200
-        viewer = (await c.post("/api/auth/login", json={
+        viewer = (await c.post("/api/v1/auth/login", json={
             "identifier": "viewer_auth", "password": "viewer-password",
         })).json()
         c.cookies.clear()
         viewer_headers = {"Authorization": f"Bearer {viewer['access_token']}"}
-        assert (await c.post("/api/novels", headers=viewer_headers, json={
+        assert (await c.post("/api/v1/novels", headers=viewer_headers, json={
             "title": "只读不可写", "inspiration": "权限", "total_chapters": 1,
         })).status_code == 403
-        assert (await c.post("/api/auth/logout", headers=viewer_headers)).status_code == 200
-        assert (await c.get("/api/auth/me", headers=viewer_headers)).status_code == 401
+        assert (await c.post("/api/v1/auth/logout", headers=viewer_headers)).status_code == 200
+        assert (await c.get("/api/v1/auth/me", headers=viewer_headers)).status_code == 401
 
 
 async def test_cookie_session_requires_csrf_and_logout_clears_cookies(api_env):
@@ -331,7 +331,7 @@ async def test_cookie_session_requires_csrf_and_logout_clears_cookies(api_env):
     api_env.cfg.auth_cookie_secure = None
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="https://t") as c:
         registered = await c.post(
-            "/api/auth/register",
+            "/api/v1/auth/register",
             json={
                 "username": "cookie_owner",
                 "password": "cookie-password",
@@ -350,14 +350,14 @@ async def test_cookie_session_requires_csrf_and_logout_clears_cookies(api_env):
         assert "HttpOnly" not in csrf_cookie
 
         rejected = await c.post(
-            "/api/novels",
+            "/api/v1/novels",
             json={"title": "缺少 CSRF", "inspiration": "不应创建", "total_chapters": 1},
         )
         assert rejected.status_code == 403
 
         csrf_token = c.cookies["novel_agent_csrf"]
         created = await c.post(
-            "/api/novels",
+            "/api/v1/novels",
             headers={"X-CSRF-Token": csrf_token},
             json={"title": "Cookie 创建", "inspiration": "应当成功", "total_chapters": 1},
         )
@@ -365,31 +365,31 @@ async def test_cookie_session_requires_csrf_and_logout_clears_cookies(api_env):
 
         c.cookies.clear()
         bearer_created = await c.post(
-            "/api/novels",
+            "/api/v1/novels",
             headers={"Authorization": f"Bearer {payload['access_token']}"},
             json={"title": "Bearer 创建", "inspiration": "兼容客户端", "total_chapters": 1},
         )
         assert bearer_created.status_code == 200
 
         login = await c.post(
-            "/api/auth/login",
+            "/api/v1/auth/login",
             json={"identifier": "cookie_owner", "password": "cookie-password"},
         )
         assert login.status_code == 200
         csrf_token = c.cookies["novel_agent_csrf"]
-        logout = await c.post("/api/auth/logout", headers={"X-CSRF-Token": csrf_token})
+        logout = await c.post("/api/v1/auth/logout", headers={"X-CSRF-Token": csrf_token})
         assert logout.status_code == 200
         cleared = logout.headers.get_list("set-cookie")
         assert any(value.startswith("novel_agent_session=") and "Max-Age=0" in value for value in cleared)
         assert any(value.startswith("novel_agent_csrf=") and "Max-Age=0" in value for value in cleared)
-        assert (await c.get("/api/auth/me")).status_code == 401
+        assert (await c.get("/api/v1/auth/me")).status_code == 401
 
 
 async def test_model_trace_endpoint_returns_metadata_only(api_env):
     from httpx import ASGITransport, AsyncClient
 
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
-        created = (await c.post("/api/novels", json={
+        created = (await c.post("/api/v1/novels", json={
             "title": "轨迹测试", "genre": "科幻", "inspiration": "测试调用轨迹", "total_chapters": 1,
         })).json()
         api_env.app.state.model_settings_store.record_model_call(
@@ -412,7 +412,7 @@ async def test_model_trace_endpoint_returns_metadata_only(api_env):
             input_chars=120,
             output_chars=240,
         )
-        response = await c.get(f"/api/novels/{created['id']}/traces?agent=scene_writer")
+        response = await c.get(f"/api/v1/novels/{created['id']}/traces?agent=scene_writer")
 
     assert response.status_code == 200
     assert response.json()[0]["trace_id"] == "trace-api"
@@ -424,13 +424,13 @@ async def test_evaluation_benchmark_api_runs_and_lists_history(api_env):
     from httpx import ASGITransport, AsyncClient
 
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
-        created = await c.post("/api/evaluations/benchmarks", json={"include_judge": False})
+        created = await c.post("/api/v1/evaluations/benchmarks", json={"include_judge": False})
         assert created.status_code == 200
         run = created.json()
         assert run["status"] == "passed"
         assert len(run["cases"]) == 5
-        history = await c.get("/api/evaluations/benchmarks?limit=10")
-        detail = await c.get(f"/api/evaluations/benchmarks/{run['id']}")
+        history = await c.get("/api/v1/evaluations/benchmarks?limit=10")
+        detail = await c.get(f"/api/v1/evaluations/benchmarks/{run['id']}")
 
     assert history.status_code == 200
     assert history.json()[0]["id"] == run["id"]
@@ -468,7 +468,7 @@ async def test_memory_quality_and_rebuild_api_are_tenant_scoped(api_env, monkeyp
 
     monkeypatch.setattr(api_env, "NovelMemory", FakeMemory)
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
-        created = (await c.post("/api/novels", json={
+        created = (await c.post("/api/v1/novels", json={
             "title": "记忆评测", "inspiration": "检索质量", "total_chapters": 1,
         })).json()
         nid = created["id"]
@@ -480,9 +480,9 @@ async def test_memory_quality_and_rebuild_api_are_tenant_scoped(api_env, monkeyp
             summary="林寒进入雾都",
             status="final",
         )
-        evaluated = await c.post(f"/api/novels/{nid}/memory/evaluate", json={"k": 3})
-        rebuilt = await c.post(f"/api/novels/{nid}/memory/rebuild", json={"evaluate": True, "k": 3})
-        history = await c.get(f"/api/novels/{nid}/memory/quality")
+        evaluated = await c.post(f"/api/v1/novels/{nid}/memory/evaluate", json={"k": 3})
+        rebuilt = await c.post(f"/api/v1/novels/{nid}/memory/rebuild", json={"evaluate": True, "k": 3})
+        history = await c.get(f"/api/v1/novels/{nid}/memory/quality")
 
     assert evaluated.status_code == 200
     assert evaluated.json()["report"]["schema_version"] == "memory-quality-v1"
@@ -496,7 +496,7 @@ async def test_novel_export_formats_and_backup_import(api_env):
     from httpx import ASGITransport, AsyncClient
 
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
-        created = (await c.post("/api/novels", json={
+        created = (await c.post("/api/v1/novels", json={
             "title": "导出测试", "genre": "武侠", "inspiration": "备份", "total_chapters": 1,
         })).json()
         nid = created["id"]
@@ -509,12 +509,12 @@ async def test_novel_export_formats_and_backup_import(api_env):
             status="final",
         )
         responses = {
-            fmt: await c.get(f"/api/novels/{nid}/export?format={fmt}")
+            fmt: await c.get(f"/api/v1/novels/{nid}/export?format={fmt}")
             for fmt in ("markdown", "txt", "docx", "epub", "backup")
         }
         backup = responses["backup"].content
         imported = await c.post(
-            "/api/novels/import",
+            "/api/v1/novels/import",
             files={"file": ("导出测试.novel-backup.zip", backup, "application/zip")},
         )
 
@@ -532,7 +532,7 @@ async def test_import_rejects_files_over_configured_limit(api_env, monkeypatch):
     monkeypatch.setattr(api_env.cfg, "max_import_bytes", 4)
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
         response = await c.post(
-            "/api/novels/import",
+            "/api/v1/novels/import",
             files={"file": ("large.txt", b"12345", "text/plain")},
         )
     assert response.status_code == 413
@@ -544,12 +544,12 @@ async def test_import_uses_highest_chapter_number_for_progress(api_env):
     content = "# 跳章作品\n\n第1章 起点\n第一章正文\n\n第10章 终点\n第十章正文"
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
         imported = await c.post(
-            "/api/novels/import",
+            "/api/v1/novels/import",
             files={"file": ("jump.md", content.encode(), "text/markdown")},
         )
         assert imported.status_code == 200, imported.text
         novel_id = imported.json()["novel"]["id"]
-        state = await c.get(f"/api/novels/{novel_id}/state")
+        state = await c.get(f"/api/v1/novels/{novel_id}/state")
 
     assert imported.json()["novel"]["total_chapters"] == 10
     assert state.json()["total_chapters"] == 10
@@ -575,7 +575,7 @@ async def test_password_encrypted_backup_export_and_import(api_env, monkeypatch)
 
     monkeypatch.setattr(api_env, "NovelMemory", MemoryStub)
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
-        created = (await c.post("/api/novels", json={
+        created = (await c.post("/api/v1/novels", json={
             "title": "加密备份", "inspiration": "安全恢复", "total_chapters": 1,
         })).json()
         api_env.store.save_chapter(
@@ -587,17 +587,17 @@ async def test_password_encrypted_backup_export_and_import(api_env, monkeypatch)
             status="final",
         )
         exported = await c.get(
-            f"/api/novels/{created['id']}/export",
+            f"/api/v1/novels/{created['id']}/export",
             params={"format": "backup"},
             headers={"X-Backup-Password": "secret-passphrase"},
         )
         imported = await c.post(
-            "/api/novels/import",
+            "/api/v1/novels/import",
             files={"file": ("backup.novel-backup.enc", exported.content, "application/octet-stream")},
             data={"password": "secret-passphrase"},
         )
         rejected = await c.post(
-            "/api/novels/import",
+            "/api/v1/novels/import",
             files={"file": ("backup.novel-backup.enc", exported.content, "application/octet-stream")},
             data={"password": "wrong"},
         )
@@ -637,13 +637,13 @@ async def test_large_transfer_import_and_export_use_persistent_jobs(api_env, mon
     monkeypatch.setattr(api_env.asyncio, "to_thread", tracked_to_thread)
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
         imported = await c.post(
-            "/api/novels/import",
+            "/api/v1/novels/import",
             files={"file": ("large.txt", "# 后台导入\n\n第一章\n正文内容".encode(), "text/plain")},
         )
         assert imported.status_code == 202
         import_job_id = imported.json()["job"]["id"]
         for _ in range(40):
-            import_job = await c.get(f"/api/transfers/{import_job_id}")
+            import_job = await c.get(f"/api/v1/transfers/{import_job_id}")
             if import_job.json()["status"] not in {"queued", "running"}:
                 break
             await asyncio.sleep(0.02)
@@ -651,18 +651,18 @@ async def test_large_transfer_import_and_export_use_persistent_jobs(api_env, mon
         imported_novel = import_job.json()["result"]["novel"]
 
         exported = await c.get(
-            f"/api/novels/{imported_novel['id']}/export",
+            f"/api/v1/novels/{imported_novel['id']}/export",
             params={"format": "backup"},
         )
         assert exported.status_code == 202
         export_job_id = exported.json()["job"]["id"]
         for _ in range(40):
-            export_job = await c.get(f"/api/transfers/{export_job_id}")
+            export_job = await c.get(f"/api/v1/transfers/{export_job_id}")
             if export_job.json()["status"] not in {"queued", "running"}:
                 break
             await asyncio.sleep(0.02)
         assert export_job.json()["status"] == "completed", export_job.json()
-        downloaded = await c.get(f"/api/transfers/{export_job_id}/download")
+        downloaded = await c.get(f"/api/v1/transfers/{export_job_id}/download")
 
     assert downloaded.status_code == 200
     assert downloaded.content.startswith(b"PK")
@@ -674,7 +674,7 @@ async def test_empty_backup_roundtrip_restores_an_idle_novel(api_env):
     from httpx import ASGITransport, AsyncClient
 
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
-        created = (await c.post("/api/novels", json={
+        created = (await c.post("/api/v1/novels", json={
             "title": "尚未开写",
             "genre": "悬疑",
             "inspiration": "只有创作设定，尚无正文",
@@ -682,11 +682,11 @@ async def test_empty_backup_roundtrip_restores_an_idle_novel(api_env):
             "style": "gu_long",
         })).json()
         exported = await c.get(
-            f"/api/novels/{created['id']}/export",
+            f"/api/v1/novels/{created['id']}/export",
             params={"format": "backup"},
         )
         imported = await c.post(
-            "/api/novels/import",
+            "/api/v1/novels/import",
             files={"file": ("empty.novel-backup.zip", exported.content, "application/zip")},
         )
 
@@ -694,7 +694,7 @@ async def test_empty_backup_roundtrip_restores_an_idle_novel(api_env):
         payload = imported.json()
         assert payload["novel"]["title"] == "尚未开写"
         assert payload["imported_chapters"] == 0
-        restored_state = await c.get(f"/api/novels/{payload['novel']['id']}/state")
+        restored_state = await c.get(f"/api/v1/novels/{payload['novel']['id']}/state")
 
     assert restored_state.status_code == 200
     assert restored_state.json()["status"] == "idle"
@@ -705,7 +705,7 @@ async def test_novel_crud_flow(api_env):
     from httpx import ASGITransport, AsyncClient
 
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
-        created = (await c.post("/api/novels", json={
+        created = (await c.post("/api/v1/novels", json={
             "title": "雾中剑", "genre": "武侠", "inspiration": "失忆剑客",
             "total_chapters": 1, "style": "gu_long",
             "creative_brief": {
@@ -720,23 +720,23 @@ async def test_novel_crud_flow(api_env):
         assert created["creative_brief"]["target_audience"] == "成年武侠读者"
         assert created["creative_brief"]["point_of_view"] == "multiple"
 
-        assert len((await c.get("/api/novels")).json()) == 1
-        detail = (await c.get(f"/api/novels/{nid}")).json()
+        assert len((await c.get("/api/v1/novels")).json()["items"]) == 1
+        detail = (await c.get(f"/api/v1/novels/{nid}")).json()
         assert detail["title"] == "雾中剑"
         assert detail["creative_brief"]["themes"] == ["身份", "传承"]
 
-        state = (await c.get(f"/api/novels/{nid}/state")).json()
+        state = (await c.get(f"/api/v1/novels/{nid}/state")).json()
         assert state["creative_brief"]["intensity"]["action"] == 5
 
-        assert (await c.get("/api/novels/none")).status_code == 404
-        assert (await c.post("/api/novels/{none}/run".replace("{none}", "none"))).status_code == 404
+        assert (await c.get("/api/v1/novels/none")).status_code == 404
+        assert (await c.post("/api/v1/novels/{none}/run".replace("{none}", "none"))).status_code == 404
 
 
 async def test_create_novel_keeps_backward_compatible_brief_defaults(api_env):
     from httpx import ASGITransport, AsyncClient
 
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
-        response = await c.post("/api/novels", json={
+        response = await c.post("/api/v1/novels", json={
             "title": "旧客户端作品",
             "inspiration": "未发送创作约束",
         })
@@ -750,7 +750,7 @@ async def test_create_novel_rejects_invalid_creative_brief(api_env):
     from httpx import ASGITransport, AsyncClient
 
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
-        response = await c.post("/api/novels", json={
+        response = await c.post("/api/v1/novels", json={
             "title": "非法约束",
             "inspiration": "测试校验",
             "creative_brief": {
@@ -766,13 +766,13 @@ async def test_creative_brief_update_versions_and_rejects_stale_writes(api_env):
     from httpx import ASGITransport, AsyncClient
 
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
-        created = (await c.post("/api/novels", json={
+        created = (await c.post("/api/v1/novels", json={
             "title": "约束版本",
             "inspiration": "测试约束更新",
         })).json()
         nid = created["id"]
         updated = await c.put(
-            f"/api/novels/{nid}/creative-brief",
+            f"/api/v1/novels/{nid}/creative-brief",
             json={
                 "expected_version": 1,
                 "change_summary": "改为第一人称开放结局",
@@ -785,21 +785,21 @@ async def test_creative_brief_update_versions_and_rejects_stale_writes(api_env):
             },
         )
         conflict = await c.put(
-            f"/api/novels/{nid}/creative-brief",
+            f"/api/v1/novels/{nid}/creative-brief",
             json={
                 "expected_version": 1,
                 "creative_brief": {"target_audience": "旧页面提交"},
             },
         )
         unchanged = await c.put(
-            f"/api/novels/{nid}/creative-brief",
+            f"/api/v1/novels/{nid}/creative-brief",
             json={
                 "expected_version": 2,
                 "creative_brief": updated.json()["creative_brief"],
             },
         )
         versions = (await c.get(
-            f"/api/novels/{nid}/creative-brief/versions"
+            f"/api/v1/novels/{nid}/creative-brief/versions"
         )).json()
 
     assert updated.status_code == 200
@@ -807,7 +807,7 @@ async def test_creative_brief_update_versions_and_rejects_stale_writes(api_env):
     assert updated.json()["changed"] is True
     assert updated.json()["requires_revalidation"] is False
     assert conflict.status_code == 409
-    assert "当前版本为 v2" in conflict.json()["detail"]
+    assert "当前版本为 v2" in conflict.json()["message"]
     assert unchanged.json()["changed"] is False
     assert unchanged.json()["creative_brief_version"] == 2
     assert [item["version_number"] for item in versions] == [2, 1]
@@ -827,12 +827,12 @@ async def test_creative_brief_update_preserves_review_checkpoint_and_requires_re
         return []
 
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
-        nid = (await c.post("/api/novels", json={
+        nid = (await c.post("/api/v1/novels", json={
             "title": "审查中更新",
             "inspiration": "测试 checkpoint 同步",
             "total_chapters": 1,
         })).json()["id"]
-        await c.post(f"/api/novels/{nid}/run")
+        await c.post(f"/api/v1/novels/{nid}/run")
         before = await api_env.app.state.graph.aget_state(
             {"configurable": {"thread_id": nid}}
         )
@@ -850,7 +850,7 @@ async def test_creative_brief_update_preserves_review_checkpoint_and_requires_re
         )
 
         updated = await c.put(
-            f"/api/novels/{nid}/creative-brief",
+            f"/api/v1/novels/{nid}/creative-brief",
             json={
                 "expected_version": 1,
                 "change_summary": "禁止梦境解谜",
@@ -861,19 +861,19 @@ async def test_creative_brief_update_preserves_review_checkpoint_and_requires_re
                 },
             },
         )
-        review_state = (await c.get(f"/api/novels/{nid}/state")).json()
+        review_state = (await c.get(f"/api/v1/novels/{nid}/state")).json()
         blocked = await c.post(
-            f"/api/novels/{nid}/jobs/resume",
+            f"/api/v1/novels/{nid}/jobs/resume",
             json={"feedback": "approve"},
         )
 
         monkeypatch.setattr("novel_agent.graph.nodes.ConsistencyCheckerAgent.check", no_issues)
         recheck = await c.post(
-            f"/api/novels/{nid}/jobs/resume",
+            f"/api/v1/novels/{nid}/jobs/resume",
             json={"feedback": "recheck"},
         )
         result = await _wait_for_run_job(c, recheck.json()["id"])
-        rechecked_state = (await c.get(f"/api/novels/{nid}/state")).json()
+        rechecked_state = (await c.get(f"/api/v1/novels/{nid}/state")).json()
 
     assert updated.status_code == 200
     assert updated.json()["creative_brief_version"] == 2
@@ -886,7 +886,7 @@ async def test_creative_brief_update_preserves_review_checkpoint_and_requires_re
         item for item in review_state["chapter_candidates"] if item["id"] == candidate["id"]
     )["status"] == "stale"
     assert blocked.status_code == 409
-    assert "必须先按新约束重新质检" in blocked.json()["detail"]
+    assert "必须先按新约束重新质检" in blocked.json()["message"]
     assert recheck.status_code == 202
     assert result["job"]["status"] == "waiting_review"
     assert rechecked_state["status"] == "human_review"
@@ -898,11 +898,11 @@ async def test_delete_novel_removes_it_and_returns_404_afterward(api_env):
     from httpx import ASGITransport, AsyncClient
 
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
-        nid = (await c.post("/api/novels", json={
+        nid = (await c.post("/api/v1/novels", json={
             "title": "删除测试", "inspiration": "灵感", "total_chapters": 1,
         })).json()["id"]
-        deleted = await c.delete(f"/api/novels/{nid}")
-        missing = await c.get(f"/api/novels/{nid}")
+        deleted = await c.delete(f"/api/v1/novels/{nid}")
+        missing = await c.get(f"/api/v1/novels/{nid}")
 
     assert deleted.status_code == 200
     assert deleted.json() == {"deleted": True, "novel_id": nid}
@@ -913,7 +913,7 @@ async def test_delete_missing_novel_returns_404(api_env):
     from httpx import ASGITransport, AsyncClient
 
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
-        response = await c.delete("/api/novels/missing")
+        response = await c.delete("/api/v1/novels/missing")
     assert response.status_code == 404
 
 
@@ -922,14 +922,14 @@ async def test_run_interrupt_resume_flow(api_env, fake_llm_7):
     from httpx import ASGITransport, AsyncClient
 
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
-        nid = (await c.post("/api/novels", json={
+        nid = (await c.post("/api/v1/novels", json={
             "title": "雾中剑", "inspiration": "失忆剑客", "total_chapters": 1, "style": "gu_long",
         })).json()["id"]
 
         # run:流式 NDJSON,直至 interrupt
         lines = [
             json.loads(line)
-            async for line in (await c.post(f"/api/novels/{nid}/run")).aiter_lines()
+            async for line in (await c.post(f"/api/v1/novels/{nid}/run")).aiter_lines()
             if line.strip()
         ]
         nodes = [e["node"] for e in lines if e["type"] == "node_done" and e["node"] != "orchestrator"]
@@ -942,31 +942,31 @@ async def test_run_interrupt_resume_flow(api_env, fake_llm_7):
         assert interrupt_ev["scene_plan"][0]["goal"] == "进入雾都"
 
         # 已暂停时必须显式走 resume,不能用 run 重复驱动同一检查点
-        rerun = await c.post(f"/api/novels/{nid}/run")
+        rerun = await c.post(f"/api/v1/novels/{nid}/run")
         assert rerun.status_code == 409
 
         # 未暂停前对已结束流 resume:图暂停在 human_review,可 resume
         resume_lines = [
             json.loads(line)
-            async for line in (await c.post(f"/api/novels/{nid}/resume", json={"feedback": "approve"})).aiter_lines()
+            async for line in (await c.post(f"/api/v1/novels/{nid}/resume", json={"feedback": "approve"})).aiter_lines()
             if line.strip()
         ]
         assert resume_lines[-1]["type"] == "end"
         assert resume_lines[-1]["chapters_done"] == 1
 
         # 已至 END 再 resume → 409
-        assert (await c.post(f"/api/novels/{nid}/resume", json={"feedback": "approve"})).status_code == 409
+        assert (await c.post(f"/api/v1/novels/{nid}/resume", json={"feedback": "approve"})).status_code == 409
 
         # 定稿已入 SQLite
-        detail = (await c.get(f"/api/novels/{nid}")).json()
+        detail = (await c.get(f"/api/v1/novels/{nid}")).json()
         assert len(detail["chapters"]) == 1
         assert detail["chapters"][0]["status"] == "final"
         assert detail["chapters"][0]["summary"].startswith("林寒穿过雾都城门")
         assert detail["chapters"][0]["digest"]["digest_version"] == "chapter-digest-v1"
         assert detail["chapters"][0]["scene_plan"][0]["goal"] == "进入雾都"
-        state = (await c.get(f"/api/novels/{nid}/state")).json()
-        audits = (await c.get(f"/api/novels/{nid}/book-audits")).json()
-        memory = (await c.get(f"/api/novels/{nid}/memory")).json()
+        state = (await c.get(f"/api/v1/novels/{nid}/state")).json()
+        audits = (await c.get(f"/api/v1/novels/{nid}/book-audits")).json()
+        memory = (await c.get(f"/api/v1/novels/{nid}/memory")).json()
         assert state["book_audit"]["judge_scores"]["plot_coherence"] == 88
         assert state["memory"] == {
             "schema_version": "book-memory-v1",
@@ -987,13 +987,13 @@ async def test_completed_book_can_revise_a_final_chapter_and_reaudit(
     from httpx import ASGITransport, AsyncClient
 
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
-        nid = (await c.post("/api/novels", json={
+        nid = (await c.post("/api/v1/novels", json={
             "title": "终稿返修",
             "inspiration": "失忆剑客",
             "total_chapters": 1,
         })).json()["id"]
-        await c.post(f"/api/novels/{nid}/run")
-        await c.post(f"/api/novels/{nid}/resume", json={"feedback": "approve"})
+        await c.post(f"/api/v1/novels/{nid}/run")
+        await c.post(f"/api/v1/novels/{nid}/resume", json={"feedback": "approve"})
         original = api_env.store.get_chapter(nid, 1)
         first_audit = api_env.store.get_latest_book_audit(nid)
 
@@ -1007,12 +1007,12 @@ async def test_completed_book_can_revise_a_final_chapter_and_reaudit(
             lambda **kw: revision_model,
         )
         started = await c.post(
-            f"/api/novels/{nid}/jobs/book-revision",
+            f"/api/v1/novels/{nid}/jobs/book-revision",
             json={"chapter_number": 1, "feedback": "强化结局的角色选择"},
         )
         assert started.status_code == 202
         waiting = await _wait_for_run_job(c, started.json()["id"])
-        review_state = (await c.get(f"/api/novels/{nid}/state")).json()
+        review_state = (await c.get(f"/api/v1/novels/{nid}/state")).json()
 
         assert waiting["job"]["status"] == "waiting_review"
         assert review_state["status"] == "human_review"
@@ -1021,12 +1021,12 @@ async def test_completed_book_can_revise_a_final_chapter_and_reaudit(
         assert api_env.store.get_chapter(nid, 1)["content"] == original["content"]
 
         approved = await c.post(
-            f"/api/novels/{nid}/jobs/resume",
+            f"/api/v1/novels/{nid}/jobs/resume",
             json={"feedback": "approve"},
         )
         final = await _wait_for_run_job(c, approved.json()["id"])
-        final_state = (await c.get(f"/api/novels/{nid}/state")).json()
-        audits = (await c.get(f"/api/novels/{nid}/book-audits")).json()
+        final_state = (await c.get(f"/api/v1/novels/{nid}/state")).json()
+        audits = (await c.get(f"/api/v1/novels/{nid}/book-audits")).json()
 
     assert final["job"]["status"] == "completed"
     assert final_state["status"] == "completed"
@@ -1052,22 +1052,22 @@ async def test_digest_failure_returns_retryable_human_review(api_env, fake_llm_7
             raise RuntimeError("digest provider unavailable")
 
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
-        nid = (await c.post("/api/novels", json={
+        nid = (await c.post("/api/v1/novels", json={
             "title": "提炼重试", "inspiration": "灵感", "total_chapters": 1,
         })).json()["id"]
-        await c.post(f"/api/novels/{nid}/run")
+        await c.post(f"/api/v1/novels/{nid}/run")
         monkeypatch.setattr(nodes, "ChapterDigestAgent", FailingDigest)
 
         failed = [
             json.loads(line)
             async for line in (
-                await c.post(f"/api/novels/{nid}/resume", json={"feedback": "approve"})
+                await c.post(f"/api/v1/novels/{nid}/resume", json={"feedback": "approve"})
             ).aiter_lines()
             if line.strip()
         ]
         assert failed[-1]["type"] == "interrupt"
         assert "终稿事实提炼失败" in failed[-1]["persistence_error"]
-        assert (await c.get(f"/api/novels/{nid}/state")).json()["status"] == "human_review"
+        assert (await c.get(f"/api/v1/novels/{nid}/state")).json()["status"] == "human_review"
 
         monkeypatch.setattr(nodes, "ChapterDigestAgent", __import__(
             "novel_agent.agents.chapter_digest", fromlist=["ChapterDigestAgent"]
@@ -1075,7 +1075,7 @@ async def test_digest_failure_returns_retryable_human_review(api_env, fake_llm_7
         recovered = [
             json.loads(line)
             async for line in (
-                await c.post(f"/api/novels/{nid}/resume", json={"feedback": "approve"})
+                await c.post(f"/api/v1/novels/{nid}/resume", json={"feedback": "approve"})
             ).aiter_lines()
             if line.strip()
         ]
@@ -1093,7 +1093,7 @@ async def _wait_for_run_job(client, job_id: str, terminal: set[str] | None = Non
     }
     payload = None
     for _ in range(200):
-        payload = (await client.get(f"/api/jobs/{job_id}/events")).json()
+        payload = (await client.get(f"/api/v1/jobs/{job_id}/events")).json()
         if payload["job"]["status"] in terminal:
             return payload
         await asyncio.sleep(0.01)
@@ -1107,22 +1107,22 @@ async def test_background_run_job_survives_request_and_replays_events(
     from httpx import ASGITransport, AsyncClient
 
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
-        nid = (await c.post("/api/novels", json={
+        nid = (await c.post("/api/v1/novels", json={
             "title": "后台任务", "inspiration": "灵感", "total_chapters": 1,
         })).json()["id"]
-        created = await c.post(f"/api/novels/{nid}/jobs/run")
+        created = await c.post(f"/api/v1/novels/{nid}/jobs/run")
         assert created.status_code == 202
         job_id = created.json()["id"]
 
         result = await _wait_for_run_job(c, job_id)
         events = result["events"]
-        state = (await c.get(f"/api/novels/{nid}/state")).json()
+        state = (await c.get(f"/api/v1/novels/{nid}/state")).json()
         resumed = await c.post(
-            f"/api/novels/{nid}/jobs/resume",
+            f"/api/v1/novels/{nid}/jobs/resume",
             json={"feedback": "approve"},
         )
         final = await _wait_for_run_job(c, resumed.json()["id"])
-        final_state = (await c.get(f"/api/novels/{nid}/state")).json()
+        final_state = (await c.get(f"/api/v1/novels/{nid}/state")).json()
 
     assert result["job"]["status"] == "waiting_review"
     assert events[0]["payload"]["type"] == "job_started"
@@ -1178,12 +1178,12 @@ async def test_candidate_generation_keeps_checkpoint_untouched_and_selection_rec
     monkeypatch.setattr("novel_agent.graph.nodes.ConsistencyCheckerAgent.check", no_issues)
 
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
-        nid = (await c.post("/api/novels", json={
+        nid = (await c.post("/api/v1/novels", json={
             "title": "候选稿",
             "inspiration": "灵感",
             "total_chapters": 1,
         })).json()["id"]
-        run = await c.post(f"/api/novels/{nid}/jobs/run")
+        run = await c.post(f"/api/v1/novels/{nid}/jobs/run")
         await _wait_for_run_job(c, run.json()["id"])
         before = await api_env.app.state.graph.aget_state(
             {"configurable": {"thread_id": nid}}
@@ -1191,12 +1191,12 @@ async def test_candidate_generation_keeps_checkpoint_untouched_and_selection_rec
         original_content = before.values["current_draft"]["content"]
 
         generated = await c.post(
-            f"/api/novels/{nid}/jobs/candidates",
+            f"/api/v1/novels/{nid}/jobs/candidates",
             json={"count": 2, "instruction": "增强悬念"},
         )
         assert generated.status_code == 202
         result = await _wait_for_run_job(c, generated.json()["id"])
-        candidate_state = (await c.get(f"/api/novels/{nid}/state")).json()
+        candidate_state = (await c.get(f"/api/v1/novels/{nid}/state")).json()
         after = await api_env.app.state.graph.aget_state(
             {"configurable": {"thread_id": nid}}
         )
@@ -1209,22 +1209,22 @@ async def test_candidate_generation_keeps_checkpoint_untouched_and_selection_rec
 
         chosen = candidate_state["chapter_candidates"][0]
         selected = await c.post(
-            f"/api/novels/{nid}/jobs/resume",
+            f"/api/v1/novels/{nid}/jobs/resume",
             json={"candidate_id": chosen["id"]},
         )
         selected_result = await _wait_for_run_job(c, selected.json()["id"])
-        selected_state = (await c.get(f"/api/novels/{nid}/state")).json()
+        selected_state = (await c.get(f"/api/v1/novels/{nid}/state")).json()
 
         alternative = next(
             item for item in candidate_state["chapter_candidates"]
             if item["id"] != chosen["id"]
         )
         switched = await c.post(
-            f"/api/novels/{nid}/jobs/resume",
+            f"/api/v1/novels/{nid}/jobs/resume",
             json={"candidate_id": alternative["id"]},
         )
         switched_result = await _wait_for_run_job(c, switched.json()["id"])
-        switched_state = (await c.get(f"/api/novels/{nid}/state")).json()
+        switched_state = (await c.get(f"/api/v1/novels/{nid}/state")).json()
 
     assert selected_result["job"]["status"] == "waiting_review"
     assert selected_state["current_draft"]["content"] == chosen["content"]
@@ -1245,7 +1245,7 @@ async def test_background_planning_review_jobs_resume_through_both_gates(
     from httpx import ASGITransport, AsyncClient
 
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
-        created = (await c.post("/api/novels", json={
+        created = (await c.post("/api/v1/novels", json={
             "title": "审批流",
             "inspiration": "先审后写",
             "total_chapters": 1,
@@ -1254,9 +1254,9 @@ async def test_background_planning_review_jobs_resume_through_both_gates(
         nid = created["id"]
         assert created["planning_review_enabled"] is True
 
-        run = await c.post(f"/api/novels/{nid}/jobs/run")
+        run = await c.post(f"/api/v1/novels/{nid}/jobs/run")
         first = await _wait_for_run_job(c, run.json()["id"])
-        blueprint_state = (await c.get(f"/api/novels/{nid}/state")).json()
+        blueprint_state = (await c.get(f"/api/v1/novels/{nid}/state")).json()
         assert first["events"][-1]["payload"]["node"] == "blueprint_review"
         assert blueprint_state["status"] == "blueprint_review"
         assert blueprint_state["current_draft"] == {}
@@ -1264,14 +1264,14 @@ async def test_background_planning_review_jobs_resume_through_both_gates(
             "generated",
         ]
 
-        blueprint = await c.post(f"/api/novels/{nid}/jobs/resume", json={
+        blueprint = await c.post(f"/api/v1/novels/{nid}/jobs/resume", json={
             "review_type": "blueprint_review",
             "world_bible": blueprint_state["world_bible"] + "\n审阅: 通过",
             "characters": blueprint_state["characters"],
             "outline": blueprint_state["outline"],
         })
         second = await _wait_for_run_job(c, blueprint.json()["id"])
-        scene_state = (await c.get(f"/api/novels/{nid}/state")).json()
+        scene_state = (await c.get(f"/api/v1/novels/{nid}/state")).json()
         assert second["events"][-1]["payload"]["node"] == "scene_review"
         assert scene_state["status"] == "scene_review"
         assert scene_state["current_draft"] == {}
@@ -1280,36 +1280,36 @@ async def test_background_planning_review_jobs_resume_through_both_gates(
         ]
 
         blueprint_versions = (await c.get(
-            f"/api/novels/{nid}/planning/blueprint/versions"
+            f"/api/v1/novels/{nid}/planning/blueprint/versions"
         )).json()
         restored_blueprint = (await c.get(
-            f"/api/novels/{nid}/planning/blueprint/versions/2"
+            f"/api/v1/novels/{nid}/planning/blueprint/versions/2"
         )).json()
         blueprint_diff = (await c.get(
-            f"/api/novels/{nid}/planning/blueprint/versions/diff",
+            f"/api/v1/novels/{nid}/planning/blueprint/versions/diff",
             params={"from_version": 1, "to_version": 2},
         )).json()
         assert [item["source"] for item in blueprint_versions] == ["generated", "approved"]
         assert "审阅: 通过" in restored_blueprint["payload"]["world_bible"]
         assert "审阅: 通过" in blueprint_diff["diff"]
 
-        invalid = await c.post(f"/api/novels/{nid}/jobs/resume", json={
+        invalid = await c.post(f"/api/v1/novels/{nid}/jobs/resume", json={
             "review_type": "scene_review",
             "scene_plan": [],
         })
         assert invalid.status_code == 422
 
-        scene = await c.post(f"/api/novels/{nid}/jobs/resume", json={
+        scene = await c.post(f"/api/v1/novels/{nid}/jobs/resume", json={
             "review_type": "scene_review",
             "scene_plan": scene_state["scene_plan"],
         })
         third = await _wait_for_run_job(c, scene.json()["id"])
-        final_state = (await c.get(f"/api/novels/{nid}/state")).json()
+        final_state = (await c.get(f"/api/v1/novels/{nid}/state")).json()
         assert third["events"][-1]["payload"]["node"] == "human_review"
         assert final_state["status"] == "human_review"
         assert "审阅: 通过" in final_state["world_bible"]
         scene_versions = (await c.get(
-            f"/api/novels/{nid}/planning/scene/versions",
+            f"/api/v1/novels/{nid}/planning/scene/versions",
             params={"chapter_number": 1},
         )).json()
         assert [item["source"] for item in scene_versions] == ["generated", "approved"]
@@ -1327,15 +1327,15 @@ async def test_planning_version_persistence_failure_does_not_break_checkpoint(
 
     monkeypatch.setattr(api_env.store, "save_planning_version", fail_snapshot)
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
-        nid = (await c.post("/api/novels", json={
+        nid = (await c.post("/api/v1/novels", json={
             "title": "快照失败",
             "inspiration": "仍应暂停",
             "total_chapters": 1,
             "planning_review_enabled": True,
         })).json()["id"]
-        run = await c.post(f"/api/novels/{nid}/jobs/run")
+        run = await c.post(f"/api/v1/novels/{nid}/jobs/run")
         result = await _wait_for_run_job(c, run.json()["id"])
-        state = (await c.get(f"/api/novels/{nid}/state")).json()
+        state = (await c.get(f"/api/v1/novels/{nid}/state")).json()
 
     assert result["job"]["status"] == "waiting_review"
     assert result["events"][-1]["payload"]["node"] == "blueprint_review"
@@ -1350,15 +1350,15 @@ async def test_background_job_event_cursor_and_active_job_conflict(
     from httpx import ASGITransport, AsyncClient
 
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
-        nid = (await c.post("/api/novels", json={
+        nid = (await c.post("/api/v1/novels", json={
             "title": "事件续传", "inspiration": "灵感", "total_chapters": 1,
         })).json()["id"]
-        first = await c.post(f"/api/novels/{nid}/jobs/run")
-        duplicate = await c.post(f"/api/novels/{nid}/jobs/run")
+        first = await c.post(f"/api/v1/novels/{nid}/jobs/run")
+        duplicate = await c.post(f"/api/v1/novels/{nid}/jobs/run")
         result = await _wait_for_run_job(c, first.json()["id"])
         first_sequence = result["events"][0]["sequence"]
         replay = (await c.get(
-            f"/api/jobs/{first.json()['id']}/events",
+            f"/api/v1/jobs/{first.json()['id']}/events",
             params={"after_sequence": first_sequence},
         )).json()
 
@@ -1373,12 +1373,12 @@ async def test_background_job_can_be_cancelled(api_env, monkeypatch):
     slow = FakeListChatModel(responses=["```yaml\n世界观名称: 测试\n```"], sleep=1)
     monkeypatch.setattr("novel_agent.agents.world_builder.get_llm", lambda **kw: slow)
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
-        nid = (await c.post("/api/novels", json={
+        nid = (await c.post("/api/v1/novels", json={
             "title": "取消任务", "inspiration": "灵感", "total_chapters": 1,
         })).json()["id"]
-        created = (await c.post(f"/api/novels/{nid}/jobs/run")).json()
+        created = (await c.post(f"/api/v1/novels/{nid}/jobs/run")).json()
         settings_write = await c.post(
-            "/api/model-settings/profiles",
+            "/api/v1/model-settings/profiles",
             json={
                 "name": "Busy",
                 "provider": "openai",
@@ -1388,8 +1388,8 @@ async def test_background_job_can_be_cancelled(api_env, monkeypatch):
                 "embedding_models": ["text-embedding-3-small"],
             },
         )
-        cancelled = await c.post(f"/api/jobs/{created['id']}/cancel")
-        result = (await c.get(f"/api/jobs/{created['id']}/events")).json()
+        cancelled = await c.post(f"/api/v1/jobs/{created['id']}/cancel")
+        result = (await c.get(f"/api/v1/jobs/{created['id']}/events")).json()
 
     assert cancelled.status_code == 200
     assert settings_write.status_code == 409
@@ -1403,7 +1403,7 @@ async def test_cancel_request_does_not_finish_job_owned_by_another_worker(api_en
     api_env.store.create_novel("foreign-job", "跨进程任务")
     api_env.store.create_run_job("job-foreign", "foreign-job", "run")
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
-        response = await c.post("/api/jobs/job-foreign/cancel")
+        response = await c.post("/api/v1/jobs/job-foreign/cancel")
 
     assert response.status_code == 200
     assert response.json()["status"] == "queued"
@@ -1419,10 +1419,10 @@ async def test_background_canon_job_returns_to_review(
     from httpx import ASGITransport, AsyncClient
 
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
-        nid = (await c.post("/api/novels", json={
+        nid = (await c.post("/api/v1/novels", json={
             "title": "后台 Canon", "inspiration": "灵感", "total_chapters": 1,
         })).json()["id"]
-        started = (await c.post(f"/api/novels/{nid}/jobs/run")).json()
+        started = (await c.post(f"/api/v1/novels/{nid}/jobs/run")).json()
         await _wait_for_run_job(c, started["id"])
 
         check_llm = FakeListChatModel(responses=["[]"])
@@ -1430,7 +1430,7 @@ async def test_background_canon_job_returns_to_review(
             "novel_agent.agents.consistency_checker.get_analyzer_llm",
             lambda **kwargs: check_llm,
         )
-        created = await c.post(f"/api/novels/{nid}/jobs/canon", json={
+        created = await c.post(f"/api/v1/novels/{nid}/jobs/canon", json={
             "action": "upsert_fact",
             "target_type": "fact",
             "subject": "守夜人",
@@ -1438,7 +1438,7 @@ async def test_background_canon_job_returns_to_review(
             "reason": "测试后台治理",
         })
         result = await _wait_for_run_job(c, created.json()["id"])
-        canon = (await c.get(f"/api/novels/{nid}/canon")).json()
+        canon = (await c.get(f"/api/v1/novels/{nid}/canon")).json()
 
     assert created.status_code == 202
     assert result["job"]["status"] == "waiting_review"
@@ -1451,7 +1451,7 @@ async def test_resume_missing_novel_returns_404(api_env):
     from httpx import ASGITransport, AsyncClient
 
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
-        response = await c.post("/api/novels/missing/resume", json={"feedback": "approve"})
+        response = await c.post("/api/v1/novels/missing/resume", json={"feedback": "approve"})
     assert response.status_code == 404
 
 
@@ -1459,7 +1459,7 @@ async def test_state_missing_novel_returns_404(api_env):
     from httpx import ASGITransport, AsyncClient
 
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
-        response = await c.get("/api/novels/missing/state")
+        response = await c.get("/api/v1/novels/missing/state")
     assert response.status_code == 404
 
 
@@ -1467,10 +1467,10 @@ async def test_state_for_new_novel_is_idle(api_env):
     from httpx import ASGITransport, AsyncClient
 
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
-        nid = (await c.post("/api/novels", json={
+        nid = (await c.post("/api/v1/novels", json={
             "title": "状态测试", "inspiration": "灵感", "total_chapters": 2,
         })).json()["id"]
-        response = await c.get(f"/api/novels/{nid}/state")
+        response = await c.get(f"/api/v1/novels/{nid}/state")
 
     state = response.json()
     assert state["status"] == "idle"
@@ -1498,11 +1498,11 @@ async def test_state_for_human_review_contains_draft(api_env, fake_llm_7):
     from httpx import ASGITransport, AsyncClient
 
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
-        nid = (await c.post("/api/novels", json={
+        nid = (await c.post("/api/v1/novels", json={
             "title": "审查状态", "inspiration": "灵感", "total_chapters": 1,
         })).json()["id"]
-        await c.post(f"/api/novels/{nid}/run")
-        response = await c.get(f"/api/novels/{nid}/state")
+        await c.post(f"/api/v1/novels/{nid}/run")
+        response = await c.get(f"/api/v1/novels/{nid}/state")
 
     state = response.json()
     assert state["status"] == "human_review"
@@ -1523,14 +1523,14 @@ async def test_canon_api_reads_validates_updates_and_rechecks(api_env, fake_llm_
     from langchain_core.language_models.fake_chat_models import FakeListChatModel
 
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
-        nid = (await c.post("/api/novels", json={
+        nid = (await c.post("/api/v1/novels", json={
             "title": "Canon 治理",
             "inspiration": "灵感",
             "total_chapters": 1,
         })).json()["id"]
 
-        assert (await c.get("/api/novels/missing/canon")).status_code == 404
-        assert (await c.post(f"/api/novels/{nid}/canon", json={
+        assert (await c.get("/api/v1/novels/missing/canon")).status_code == 404
+        assert (await c.post(f"/api/v1/novels/{nid}/canon", json={
             "action": "upsert_fact",
             "target_type": "fact",
             "subject": "守夜人",
@@ -1538,19 +1538,19 @@ async def test_canon_api_reads_validates_updates_and_rechecks(api_env, fake_llm_
             "reason": "测试",
         })).status_code == 409
 
-        await c.post(f"/api/novels/{nid}/run")
-        canon = (await c.get(f"/api/novels/{nid}/canon")).json()
+        await c.post(f"/api/v1/novels/{nid}/run")
+        canon = (await c.get(f"/api/v1/novels/{nid}/canon")).json()
         assert canon["version"] == 3
         assert canon["audit"] == []
 
-        invalid = await c.post(f"/api/novels/{nid}/canon", json={
+        invalid = await c.post(f"/api/v1/novels/{nid}/canon", json={
             "action": "deprecate_fact",
             "target_type": "fact",
             "target_id": "missing",
             "reason": "无效目标",
         })
         assert invalid.status_code == 422
-        assert "不存在" in invalid.json()["detail"]
+        assert "不存在" in invalid.json()["message"]
 
         check_llm = FakeListChatModel(responses=["[]"])
         monkeypatch.setattr(
@@ -1559,7 +1559,7 @@ async def test_canon_api_reads_validates_updates_and_rechecks(api_env, fake_llm_
         )
         lines = [
             json.loads(line)
-            async for line in (await c.post(f"/api/novels/{nid}/canon", json={
+            async for line in (await c.post(f"/api/v1/novels/{nid}/canon", json={
                 "action": "upsert_fact",
                 "target_type": "fact",
                 "subject": "守夜人",
@@ -1575,12 +1575,12 @@ async def test_canon_api_reads_validates_updates_and_rechecks(api_env, fake_llm_
             "consistency_checker",
         ]
         assert lines[-1]["type"] == "interrupt"
-        updated = (await c.get(f"/api/novels/{nid}/canon")).json()
-        state = (await c.get(f"/api/novels/{nid}/state")).json()
+        updated = (await c.get(f"/api/v1/novels/{nid}/canon")).json()
+        state = (await c.get(f"/api/v1/novels/{nid}/state")).json()
 
         thread_lines = [
             json.loads(line)
-            async for line in (await c.post(f"/api/novels/{nid}/canon", json={
+            async for line in (await c.post(f"/api/v1/novels/{nid}/canon", json={
                 "action": "upsert_thread",
                 "title": "失踪王印",
                 "description": "追查王印去向",
@@ -1593,12 +1593,12 @@ async def test_canon_api_reads_validates_updates_and_rechecks(api_env, fake_llm_
             if line.strip()
         ]
         assert thread_lines[-1]["type"] == "interrupt"
-        thread_canon = (await c.get(f"/api/novels/{nid}/canon")).json()
+        thread_canon = (await c.get(f"/api/v1/novels/{nid}/canon")).json()
         thread_id = thread_canon["narrative_threads"][0]["id"]
 
         beat_lines = [
             json.loads(line)
-            async for line in (await c.post(f"/api/novels/{nid}/canon", json={
+            async for line in (await c.post(f"/api/v1/novels/{nid}/canon", json={
                 "action": "upsert_thread_beat",
                 "target_id": thread_id,
                 "chapter": 1,
@@ -1609,8 +1609,8 @@ async def test_canon_api_reads_validates_updates_and_rechecks(api_env, fake_llm_
             if line.strip()
         ]
         assert beat_lines[-1]["type"] == "interrupt"
-        thread_canon = (await c.get(f"/api/novels/{nid}/canon")).json()
-        thread_state = (await c.get(f"/api/novels/{nid}/state")).json()
+        thread_canon = (await c.get(f"/api/v1/novels/{nid}/canon")).json()
+        thread_state = (await c.get(f"/api/v1/novels/{nid}/state")).json()
 
     assert updated["facts"][0]["value"] == "只在午夜换岗"
     assert updated["audit"][0]["action"] == "upsert_fact"
@@ -1628,14 +1628,14 @@ async def test_frontend_cors_allows_vite_origin(api_env):
 
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
         response = await c.options(
-            "/api/novels",
+            "/api/v1/novels",
             headers={
                 "Origin": "http://localhost:5173",
                 "Access-Control-Request-Method": "POST",
             },
         )
         backup_response = await c.options(
-            "/api/novels/novel-1/export",
+            "/api/v1/novels/novel-1/export",
             headers={
                 "Origin": "http://localhost:5173",
                 "Access-Control-Request-Method": "GET",
@@ -1661,10 +1661,10 @@ async def test_model_profile_api_never_returns_plaintext_key(api_env):
         "embedding_models": [],
     }
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
-        created = await c.post("/api/model-settings/profiles", json=payload)
-        listed = await c.get("/api/model-settings")
+        created = await c.post("/api/v1/model-settings/profiles", json=payload)
+        listed = await c.get("/api/v1/model-settings")
         updated = await c.put(
-            f"/api/model-settings/profiles/{created.json()['id']}",
+            f"/api/v1/model-settings/profiles/{created.json()['id']}",
             json={**payload, "name": "DeepSeek 主服务", "api_key": ""},
         )
 
@@ -1688,17 +1688,17 @@ async def test_model_routes_are_atomic_and_routed_profile_cannot_be_deleted(api_
         "embedding_models": ["text-embedding-3-small"],
     }
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
-        profile_id = (await c.post("/api/model-settings/profiles", json=profile)).json()["id"]
+        profile_id = (await c.post("/api/v1/model-settings/profiles", json=profile)).json()["id"]
         target = {"profile_id": profile_id, "model_name": "gpt-4o"}
         routes = await c.put(
-            "/api/model-settings/routes",
+            "/api/v1/model-settings/routes",
             json={
                 "creative": target,
                 "analysis": target,
                 "embedding": {"profile_id": profile_id, "model_name": "text-embedding-3-small"},
             },
         )
-        deleted = await c.delete(f"/api/model-settings/profiles/{profile_id}")
+        deleted = await c.delete(f"/api/v1/model-settings/profiles/{profile_id}")
 
     assert routes.status_code == 200
     assert set(routes.json()) == {"creative", "analysis", "embedding"}
@@ -1720,14 +1720,14 @@ async def test_model_routes_accept_and_protect_fallback_profile(api_env):
 
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
         primary = (await c.post(
-            "/api/model-settings/profiles",
+            "/api/v1/model-settings/profiles",
             json=profile("Primary", "openai", "gpt-4o"),
         )).json()
         fallback = (await c.post(
-            "/api/model-settings/profiles",
+            "/api/v1/model-settings/profiles",
             json=profile("Fallback", "anthropic", "claude-sonnet-4-5"),
         )).json()
-        routes = await c.put("/api/model-settings/routes", json={
+        routes = await c.put("/api/v1/model-settings/routes", json={
             "creative": {
                 "profile_id": primary["id"],
                 "model_name": "gpt-4o",
@@ -1737,7 +1737,7 @@ async def test_model_routes_accept_and_protect_fallback_profile(api_env):
             "analysis": {"profile_id": primary["id"], "model_name": "gpt-4o"},
             "embedding": {"profile_id": primary["id"], "model_name": "embed-small"},
         })
-        deleted = await c.delete(f"/api/model-settings/profiles/{fallback['id']}")
+        deleted = await c.delete(f"/api/v1/model-settings/profiles/{fallback['id']}")
 
     assert routes.status_code == 200
     assert routes.json()["creative"]["fallback_profile_id"] == fallback["id"]
@@ -1756,9 +1756,9 @@ async def test_routed_embedding_profile_cannot_be_changed_to_anthropic(api_env):
         "embedding_models": ["text-embedding-3-small"],
     }
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
-        profile_id = (await c.post("/api/model-settings/profiles", json=profile)).json()["id"]
+        profile_id = (await c.post("/api/v1/model-settings/profiles", json=profile)).json()["id"]
         await c.put(
-            "/api/model-settings/routes",
+            "/api/v1/model-settings/routes",
             json={
                 "creative": {"profile_id": profile_id, "model_name": "gpt-4o"},
                 "analysis": {"profile_id": profile_id, "model_name": "gpt-4o"},
@@ -1769,12 +1769,12 @@ async def test_routed_embedding_profile_cannot_be_changed_to_anthropic(api_env):
             },
         )
         response = await c.put(
-            f"/api/model-settings/profiles/{profile_id}",
+            f"/api/v1/model-settings/profiles/{profile_id}",
             json={**profile, "provider": "anthropic", "base_url": ""},
         )
 
     assert response.status_code == 409
-    assert "嵌入" in response.json()["detail"]
+    assert "嵌入" in response.json()["message"]
 
 
 async def test_model_settings_write_returns_409_during_graph_stream(api_env):
@@ -1783,7 +1783,7 @@ async def test_model_settings_write_returns_409_during_graph_stream(api_env):
     api_env.app.state.active_streams = 1
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
         response = await c.post(
-            "/api/model-settings/profiles",
+            "/api/v1/model-settings/profiles",
             json={
                 "name": "Busy",
                 "provider": "openai",
@@ -1809,7 +1809,7 @@ async def test_model_profile_connection_endpoint_uses_redacted_result(api_env, m
     monkeypatch.setattr("novel_agent.models.resolver.ModelResolver.test_profile", fake_test)
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
         profile_id = (await c.post(
-            "/api/model-settings/profiles",
+            "/api/v1/model-settings/profiles",
             json={
                 "name": "Test",
                 "provider": "openai",
@@ -1820,7 +1820,7 @@ async def test_model_profile_connection_endpoint_uses_redacted_result(api_env, m
             },
         )).json()["id"]
         response = await c.post(
-            f"/api/model-settings/profiles/{profile_id}/test",
+            f"/api/v1/model-settings/profiles/{profile_id}/test",
             json={"kind": "chat", "model_name": "gpt-4o"},
         )
 
@@ -1839,13 +1839,13 @@ async def test_run_rejects_missing_model_configuration_before_stream(api_env, mo
     monkeypatch.setattr("novel_agent.api.server.ModelResolver.validate_runtime", fail_validation)
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
         novel_id = (await c.post(
-            "/api/novels",
+            "/api/v1/novels",
             json={"title": "配置缺失", "inspiration": "灵感", "total_chapters": 1},
         )).json()["id"]
-        response = await c.post(f"/api/novels/{novel_id}/run")
+        response = await c.post(f"/api/v1/novels/{novel_id}/run")
 
     assert response.status_code == 409
-    assert response.json()["detail"] == "未配置创作模型"
+    assert response.json()["message"] == "未配置创作模型"
 
 
 async def test_graph_error_event_and_logs_redact_model_secrets(api_env, monkeypatch, caplog):
@@ -1867,10 +1867,10 @@ async def test_graph_error_event_and_logs_redact_model_secrets(api_env, monkeypa
     caplog.set_level("ERROR", logger="api")
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
         novel_id = (await c.post(
-            "/api/novels",
+            "/api/v1/novels",
             json={"title": "错误脱敏", "inspiration": "灵感", "total_chapters": 1},
         )).json()["id"]
-        response = await c.post(f"/api/novels/{novel_id}/run")
+        response = await c.post(f"/api/v1/novels/{novel_id}/run")
 
     assert response.status_code == 200
     assert "test-openai-key" not in response.text
@@ -1888,17 +1888,17 @@ async def test_resume_rejects_missing_model_configuration_without_advancing_chec
 
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
         novel_id = (await c.post(
-            "/api/novels",
+            "/api/v1/novels",
             json={"title": "恢复配置缺失", "inspiration": "灵感", "total_chapters": 1},
         )).json()["id"]
-        await c.post(f"/api/novels/{novel_id}/run")
+        await c.post(f"/api/v1/novels/{novel_id}/run")
 
         def fail_validation(self):
             raise ModelConfigurationError("未配置分析模型")
 
         monkeypatch.setattr("novel_agent.api.server.ModelResolver.validate_runtime", fail_validation)
-        response = await c.post(f"/api/novels/{novel_id}/resume", json={"feedback": "approve"})
-        state = await c.get(f"/api/novels/{novel_id}/state")
+        response = await c.post(f"/api/v1/novels/{novel_id}/resume", json={"feedback": "approve"})
+        state = await c.get(f"/api/v1/novels/{novel_id}/state")
 
     assert response.status_code == 409
     assert state.json()["status"] == "human_review"
@@ -1908,12 +1908,12 @@ async def test_concurrent_run_serializes_and_second_request_gets_409(api_env, fa
     from httpx import ASGITransport, AsyncClient
 
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
-        nid = (await c.post("/api/novels", json={
+        nid = (await c.post("/api/v1/novels", json={
             "title": "并发测试", "inspiration": "灵感", "total_chapters": 1,
         })).json()["id"]
         first, second = await asyncio.gather(
-            c.post(f"/api/novels/{nid}/run"),
-            c.post(f"/api/novels/{nid}/run"),
+            c.post(f"/api/v1/novels/{nid}/run"),
+            c.post(f"/api/v1/novels/{nid}/run"),
         )
 
     assert sorted([first.status_code, second.status_code]) == [200, 409]
@@ -1926,10 +1926,10 @@ async def test_legacy_incomplete_novel_without_checkpoint_is_read_only(api_env):
     api_env.store.save_chapter("legacy", 1, "第一章", "旧正文", status="final")
 
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
-        response = await c.post("/api/novels/legacy/run")
+        response = await c.post("/api/v1/novels/legacy/run")
 
     assert response.status_code == 409
-    assert "检查点" in response.json()["detail"]
+    assert "检查点" in response.json()["message"]
 
 
 async def test_legacy_completed_novel_without_checkpoint_returns_end(api_env):
@@ -1939,7 +1939,7 @@ async def test_legacy_completed_novel_without_checkpoint_returns_end(api_env):
     api_env.store.save_chapter("legacy-done", 1, "第一章", "旧正文", status="final")
 
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
-        response = await c.post("/api/novels/legacy-done/run")
+        response = await c.post("/api/v1/novels/legacy-done/run")
 
     assert response.status_code == 200
     assert json.loads(response.text)["type"] == "end"
@@ -1953,10 +1953,10 @@ async def test_structured_output_error_preserves_retryable_checkpoint(api_env, m
     monkeypatch.setattr("novel_agent.agents.world_builder.get_llm", lambda **kw: fake)
 
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
-        nid = (await c.post("/api/novels", json={
+        nid = (await c.post("/api/v1/novels", json={
             "title": "错误恢复", "inspiration": "灵感", "total_chapters": 1,
         })).json()["id"]
-        response = await c.post(f"/api/novels/{nid}/run")
+        response = await c.post(f"/api/v1/novels/{nid}/run")
 
     events = [json.loads(line) for line in response.text.splitlines() if line]
     assert events[-1]["type"] == "error"
@@ -1974,26 +1974,28 @@ async def test_run_with_feedback_revision(api_env, fake_llm_7, monkeypatch):
         monkeypatch.setattr(f"{mod}.{attr}", lambda **kw: fake)
 
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
-        nid = (await c.post("/api/novels", json={
+        nid = (await c.post("/api/v1/novels", json={
             "title": "书", "inspiration": "灵感", "total_chapters": 1, "style": "jin_yong",
         })).json()["id"]
-        [line async for line in (await c.post(f"/api/novels/{nid}/run")).aiter_lines()]
+        [line async for line in (await c.post(f"/api/v1/novels/{nid}/run")).aiter_lines()]
 
         rev = [
             json.loads(line)
-            async for line in (await c.post(f"/api/novels/{nid}/resume", json={"feedback": "加强悬念"})).aiter_lines()
+            async for line in (
+                await c.post(f"/api/v1/novels/{nid}/resume", json={"feedback": "加强悬念"})
+            ).aiter_lines()
             if line.strip()
         ]
         assert rev[-1]["type"] == "interrupt"  # 回写后再次暂停于人工审查
 
         end = [
             json.loads(line)
-            async for line in (await c.post(f"/api/novels/{nid}/resume", json={"feedback": "approve"})).aiter_lines()
+            async for line in (await c.post(f"/api/v1/novels/{nid}/resume", json={"feedback": "approve"})).aiter_lines()
             if line.strip()
         ]
         assert end[-1]["type"] == "end"
 
-        chapters = (await c.get(f"/api/novels/{nid}")).json()["chapters"]
+        chapters = (await c.get(f"/api/v1/novels/{nid}")).json()["chapters"]
         assert len(chapters) == 1
         assert "重写" in chapters[0]["content"]
 
@@ -2005,17 +2007,17 @@ async def test_scene_scoped_revision_rewrites_selected_scene_and_returns_to_revi
     from httpx import ASGITransport, AsyncClient
 
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
-        nid = (await c.post("/api/novels", json={
+        nid = (await c.post("/api/v1/novels", json={
             "title": "局部修订", "inspiration": "灵感", "total_chapters": 1,
         })).json()["id"]
-        await c.post(f"/api/novels/{nid}/run")
+        await c.post(f"/api/v1/novels/{nid}/run")
 
         invalid = await c.post(
-            f"/api/novels/{nid}/resume",
+            f"/api/v1/novels/{nid}/resume",
             json={"feedback": "加强冲突", "scene_number": 2},
         )
         assert invalid.status_code == 422
-        assert "不存在" in invalid.json()["detail"]
+        assert "不存在" in invalid.json()["message"]
 
         fake = FakeListChatModel(responses=["局部重写后的场景。", "[]"])
         monkeypatch.setattr("novel_agent.agents.scene_rewriter.get_llm", lambda **kw: fake)
@@ -2024,13 +2026,13 @@ async def test_scene_scoped_revision_rewrites_selected_scene_and_returns_to_revi
             json.loads(line)
             for line in (
                 await c.post(
-                    f"/api/novels/{nid}/resume",
+                    f"/api/v1/novels/{nid}/resume",
                     json={"feedback": "加强动作冲突", "scene_number": 1},
                 )
             ).text.splitlines()
             if line
         ]
-        state = (await c.get(f"/api/novels/{nid}/state")).json()
+        state = (await c.get(f"/api/v1/novels/{nid}/state")).json()
 
     nodes = [event["node"] for event in revised if event["type"] == "node_done"]
     assert nodes == ["human_review", "scene_rewriter", "consistency_checker"]
@@ -2046,17 +2048,17 @@ async def test_scene_scoped_revision_requires_nonempty_feedback(api_env, fake_ll
     from httpx import ASGITransport, AsyncClient
 
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
-        nid = (await c.post("/api/novels", json={
+        nid = (await c.post("/api/v1/novels", json={
             "title": "局部修订校验", "inspiration": "灵感", "total_chapters": 1,
         })).json()["id"]
-        await c.post(f"/api/novels/{nid}/run")
+        await c.post(f"/api/v1/novels/{nid}/run")
         response = await c.post(
-            f"/api/novels/{nid}/resume",
+            f"/api/v1/novels/{nid}/resume",
             json={"feedback": "", "scene_number": 1},
         )
 
     assert response.status_code == 422
-    assert "修改意见" in response.json()["detail"]
+    assert "修改意见" in response.json()["message"]
 
 
 async def test_version_history_diff_and_restore_return_to_review(
@@ -2065,23 +2067,23 @@ async def test_version_history_diff_and_restore_return_to_review(
     from httpx import ASGITransport, AsyncClient
 
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
-        nid = (await c.post("/api/novels", json={
+        nid = (await c.post("/api/v1/novels", json={
             "title": "版本历史", "inspiration": "灵感", "total_chapters": 1,
         })).json()["id"]
-        await c.post(f"/api/novels/{nid}/run")
+        await c.post(f"/api/v1/novels/{nid}/run")
 
         fake = FakeListChatModel(responses=["整章重写。", "整章重写润色。", "[]", "[]"])
         monkeypatch.setattr("novel_agent.agents.scene_writer.get_llm", lambda **kw: fake)
         monkeypatch.setattr("novel_agent.agents.style_editor.get_llm", lambda **kw: fake)
         monkeypatch.setattr("novel_agent.agents.consistency_checker.get_analyzer_llm", lambda **kw: fake)
-        await c.post(f"/api/novels/{nid}/resume", json={"feedback": "重写整章"})
+        await c.post(f"/api/v1/novels/{nid}/resume", json={"feedback": "重写整章"})
 
         versions = (
-            await c.get(f"/api/novels/{nid}/chapters/1/versions")
+            await c.get(f"/api/v1/novels/{nid}/chapters/1/versions")
         ).json()
         diff = (
             await c.get(
-                f"/api/novels/{nid}/chapters/1/versions/diff",
+                f"/api/v1/novels/{nid}/chapters/1/versions/diff",
                 params={"from_version": 1, "to_version": 2},
             )
         ).json()
@@ -2089,13 +2091,13 @@ async def test_version_history_diff_and_restore_return_to_review(
             json.loads(line)
             for line in (
                 await c.post(
-                    f"/api/novels/{nid}/resume",
+                    f"/api/v1/novels/{nid}/resume",
                     json={"version_number": 1},
                 )
             ).text.splitlines()
             if line
         ]
-        state = (await c.get(f"/api/novels/{nid}/state")).json()
+        state = (await c.get(f"/api/v1/novels/{nid}/state")).json()
 
     assert [item["source"] for item in versions] == ["initial", "revision"]
     assert "初稿润色。" in diff["diff"]
@@ -2113,7 +2115,7 @@ async def test_chapter_evaluation_baseline_and_regression_comparison(api_env):
     from httpx import ASGITransport, AsyncClient
 
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
-        nid = (await c.post("/api/novels", json={
+        nid = (await c.post("/api/v1/novels", json={
             "title": "评测测试", "inspiration": "灵感", "total_chapters": 1,
         })).json()["id"]
         api_env.store.save_chapter_version(
@@ -2131,26 +2133,26 @@ async def test_chapter_evaluation_baseline_and_regression_comparison(api_env):
             summary="摘要",
         )
         first = (await c.post(
-            f"/api/novels/{nid}/chapters/1/versions/1/evaluations",
+            f"/api/v1/novels/{nid}/chapters/1/versions/1/evaluations",
             json={"include_judge": False},
         )).json()
         second = (await c.post(
-            f"/api/novels/{nid}/chapters/1/versions/2/evaluations",
+            f"/api/v1/novels/{nid}/chapters/1/versions/2/evaluations",
             json={"include_judge": False},
         )).json()
         baseline = (await c.put(
-            f"/api/novels/{nid}/chapters/1/evaluations/{first['id']}/baseline"
+            f"/api/v1/novels/{nid}/chapters/1/evaluations/{first['id']}/baseline"
         )).json()
         rerun = (await c.post(
-            f"/api/novels/{nid}/chapters/1/versions/1/evaluations",
+            f"/api/v1/novels/{nid}/chapters/1/versions/1/evaluations",
             json={"include_judge": False},
         )).json()
         comparison = (await c.get(
-            f"/api/novels/{nid}/chapters/1/evaluations/compare",
+            f"/api/v1/novels/{nid}/chapters/1/evaluations/compare",
             params={"from_version": 1, "to_version": 2},
         )).json()
         evaluations = (await c.get(
-            f"/api/novels/{nid}/chapters/1/evaluations"
+            f"/api/v1/novels/{nid}/chapters/1/evaluations"
         )).json()
 
     assert first["judge_scores"] == {}
@@ -2178,12 +2180,12 @@ async def test_model_judge_failure_keeps_deterministic_evaluation(
 
     monkeypatch.setattr(server, "ModelResolver", BrokenResolver)
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
-        nid = (await c.post("/api/novels", json={
+        nid = (await c.post("/api/v1/novels", json={
             "title": "降级评测", "inspiration": "灵感", "total_chapters": 1,
         })).json()["id"]
         api_env.store.save_chapter_version(nid, 1, source="initial", content="正文")
         evaluation = (await c.post(
-            f"/api/novels/{nid}/chapters/1/versions/1/evaluations",
+            f"/api/v1/novels/{nid}/chapters/1/versions/1/evaluations",
             json={"include_judge": True},
         )).json()
 
@@ -2215,15 +2217,15 @@ async def test_sqlite_finalization_failure_returns_retryable_interrupt(
     monkeypatch.setattr("novel_agent.graph.nodes._store", final_store)
 
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://t") as c:
-        nid = (await c.post("/api/novels", json={
+        nid = (await c.post("/api/v1/novels", json={
             "title": "持久化重试", "inspiration": "灵感", "total_chapters": 1,
         })).json()["id"]
-        await c.post(f"/api/novels/{nid}/run")
+        await c.post(f"/api/v1/novels/{nid}/run")
 
         failed = [
             json.loads(line)
             for line in (
-                await c.post(f"/api/novels/{nid}/resume", json={"feedback": "approve"})
+                await c.post(f"/api/v1/novels/{nid}/resume", json={"feedback": "approve"})
             ).text.splitlines()
             if line
         ]
@@ -2234,7 +2236,7 @@ async def test_sqlite_finalization_failure_returns_retryable_interrupt(
         recovered = [
             json.loads(line)
             for line in (
-                await c.post(f"/api/novels/{nid}/resume", json={"feedback": "approve"})
+                await c.post(f"/api/v1/novels/{nid}/resume", json={"feedback": "approve"})
             ).text.splitlines()
             if line
         ]

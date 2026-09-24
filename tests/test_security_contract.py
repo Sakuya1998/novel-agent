@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import json
+
 from httpx import ASGITransport, AsyncClient
+
+from scripts.export_openapi import export_openapi
 
 
 async def test_cors_allowlist_does_not_reflect_unknown_origins(api_env):
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://test") as client:
         response = await client.options(
-            "/api/novels",
+            "/api/v1/novels",
             headers={"Origin": "https://evil.example", "Access-Control-Request-Method": "POST"},
         )
     assert response.headers.get("access-control-allow-origin") != "https://evil.example"
@@ -19,16 +23,16 @@ async def test_cookie_mutation_requires_csrf_and_secure_session_attributes(api_e
     api_env.cfg.app_environment = "production"
     api_env.cfg.auth_cookie_secure = None
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="https://test") as client:
-        registered = await client.post("/api/auth/register", json={
+        registered = await client.post("/api/v1/auth/register", json={
             "username": "security_contract_user",
             "email": "security-contract@example.com",
             "password": "security-password",
             "tenant_name": "Security Contract",
         })
         assert registered.status_code == 201
-        without_csrf = await client.post("/api/novels", json={"title": "CSRF denied", "inspiration": "blocked"})
+        without_csrf = await client.post("/api/v1/novels", json={"title": "CSRF denied", "inspiration": "blocked"})
         with_csrf = await client.post(
-            "/api/novels",
+            "/api/v1/novels",
             headers={"X-CSRF-Token": client.cookies["novel_agent_csrf"]},
             json={"title": "CSRF allowed", "inspiration": "accepted"},
         )
@@ -41,8 +45,8 @@ async def test_cookie_mutation_requires_csrf_and_secure_session_attributes(api_e
     assert "HttpOnly" in session_cookie and "SameSite=lax" in session_cookie
 
 
-async def test_workspace_resource_contract_is_scoped_and_auditable(api_env):
-    schema = api_env.app.openapi()
-    assert "/api/workspaces/{workspace_id}/{resource_kind}" in schema["paths"]
-    assert "/api/audit/logs" in schema["paths"]
-    assert "/api/jobs/{job_id}/events" in schema["paths"]
+async def test_workspace_resource_contract_is_scoped_and_auditable(api_env, tmp_path):
+    schema = json.loads(export_openapi(tmp_path / "openapi.json").read_text(encoding="utf-8"))
+    assert "/api/v1/workspaces/{workspace_id}/{resource_kind}" in schema["paths"]
+    assert "/api/v1/audit/logs" in schema["paths"]
+    assert "/api/v1/jobs/{job_id}/events" in schema["paths"]

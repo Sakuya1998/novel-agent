@@ -8,7 +8,15 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 
-def error_response(request: Request, *, code: str, message: str, status_code: int, details: Any = None) -> JSONResponse:
+def error_response(
+    request: Request,
+    *,
+    code: str,
+    message: str,
+    status_code: int,
+    details: Any = None,
+    headers: dict[str, str] | None = None,
+) -> JSONResponse:
     body: dict[str, Any] = {
         "code": code,
         "message": message,
@@ -16,7 +24,7 @@ def error_response(request: Request, *, code: str, message: str, status_code: in
     }
     if details is not None:
         body["details"] = details
-    return JSONResponse(body, status_code=status_code)
+    return JSONResponse(body, status_code=status_code, headers=headers)
 
 
 async def http_exception_handler(request: Request, exc: StarletteHTTPException) -> JSONResponse:
@@ -24,7 +32,13 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException) 
         return JSONResponse({"detail": exc.detail}, status_code=exc.status_code, headers=exc.headers)
     detail = exc.detail if isinstance(exc.detail, str) else "请求失败"
     code = "not_found" if exc.status_code == 404 else "request_failed"
-    return error_response(request, code=code, message=detail, status_code=exc.status_code)
+    return error_response(
+        request,
+        code=code,
+        message=detail,
+        status_code=exc.status_code,
+        headers=dict(exc.headers or {}),
+    )
 
 
 async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:

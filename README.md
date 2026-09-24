@@ -311,7 +311,7 @@ SceneWriter 与 StyleEditor 使用内部场景边界维护 `scene_drafts`，面�
 - `intensity`：`romance`、`mystery`、`action`、`darkness` 四项 0-5 强度。
 - `notes`：补充说明。
 
-旧 API 客户端无需修改；省略 `creative_brief` 时系统使用稳定默认值。React 工作台在新建作品时提供结构化选择、滑杆和列表输入，作品页顶部显示视角与分级摘要，并可随时查看和编辑当前约束。
+版本化 API 客户端使用 `/api/v1`；省略 `creative_brief` 时系统使用稳定默认值。React 工作台在新建作品时提供结构化选择、滑杆和列表输入，作品页顶部显示视角与分级摘要，并可随时查看和编辑当前约束。
 
 每次实际变更都会生成递增版本；`PUT /creative-brief` 可提交 `expected_version` 做乐观锁校验，版本落后时返回 HTTP 409，避免覆盖另一客户端刚保存的修改。内容未变化的重复保存保持幂等，不产生新版本。活动创作任务运行期间约束只读，防止单次模型调用链混用不同版本。
 
@@ -400,7 +400,7 @@ tenant 隔离；跨 tenant 的资源 ID 查询统一返回 404。角色权限为
 
 工作台顶栏的用户按钮提供登录、注册和退出入口；注销后服务端会话立即失效。浏览器会话使用
 `HttpOnly` Cookie，写请求同时校验可读 CSRF Cookie 与
-`X-CSRF-Token` 请求头；浏览器不在 Web Storage 保存访问令牌。Bearer 认证仍保留给 CLI 和旧 API 客户端。
+`X-CSRF-Token` 请求头；浏览器不在 Web Storage 保存访问令牌。Bearer 认证保留给 CLI 客户端；旧 `/api/*` HTTP 入口已下线。
 
 运行状态接口分为：`GET /healthz` 仅表示进程存活并保持 `{ "status": "ok" }` 兼容返回；
 `GET /readyz` 检查 SQLite、LangGraph checkpoint、Chroma 目录和 schema migration；模型配置状态也会

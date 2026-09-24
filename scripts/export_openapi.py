@@ -20,7 +20,7 @@ def export_openapi(destination: str | Path = "openapi/novel-agent-v1.json") -> P
                 if isinstance(operation, dict) and isinstance(operation.get("operationId"), str):
                     operation["operationId"] += "V1"
             versioned_paths[alias] = copied
-    schema["paths"].update(versioned_paths)
+    schema["paths"] = versioned_paths
     schema["info"] = {**schema.get("info", {}), "version": "1.0.0-v1"}
     # Keep the committed artifact byte-stable across Windows and POSIX CI.
     path.write_text(

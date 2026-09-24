@@ -6,7 +6,7 @@ Accepted
 
 ## 决策
 
-后端提供 \`/api/v1\`，在 CI 生成并校验 OpenAPI artifact；前端使用生成的 TypeScript 客户端和运行时 schema，不再导入后端源码、Python 类型或相对路径文件。旧 \`/api\` 保持兼容别名，直到迁移稳定窗口结束。
+后端只提供 \`/api/v1\`，在 CI 生成并校验 OpenAPI artifact；前端使用生成的 TypeScript 客户端和运行时 schema，不再导入后端源码、Python 类型或相对路径文件。旧 \`/api\` 入口已在稳定窗口结束后移除。
 
 ## 原因
 

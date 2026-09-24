@@ -252,10 +252,26 @@ def _run_job_allowed(job: dict | None, request: Request) -> bool:
 
 @app.middleware("http")
 async def versioned_api_headers(request: Request, call_next):
-    request.state.api_version = (
-        "v1" if request.url.path == "/api/v1" or request.url.path.startswith("/api/v1/") else "legacy"
-    )
+    is_v1 = request.url.path == "/api/v1" or request.url.path.startswith("/api/v1/")
+    request.state.api_version = "v1" if is_v1 else "legacy"
     request.state.request_id = request.headers.get("X-Request-ID", "") or f"req_{uuid4().hex}"
+    is_legacy_api = request.url.path == "/api" or request.url.path.startswith("/api/")
+    if is_legacy_api and not is_v1:
+        successor = "/api/v1" + request.url.path[len("/api"):]
+        response = JSONResponse(
+            status_code=410,
+            content={
+                "code": "legacy_api_removed",
+                "message": "旧 API 已下线，请使用 /api/v1/ 下的版本化接口。",
+                "request_id": request.state.request_id,
+            },
+            headers={
+                "Link": f'<{successor}>; rel="successor-version"',
+                "Cache-Control": "no-store",
+            },
+        )
+        response.headers["X-Request-ID"] = request.state.request_id
+        return response
     if request.state.api_version == "v1" and request.url.path.startswith("/api/v1/"):
         request.scope["path"] = "/api" + request.url.path[len("/api/v1"):]
         request.scope["raw_path"] = request.scope["path"].encode("utf-8")
@@ -263,9 +279,6 @@ async def versioned_api_headers(request: Request, call_next):
     response.headers["X-Request-ID"] = request.state.request_id
     if request.state.api_version == "v1":
         response.headers["X-API-Version"] = "v1"
-    elif request.url.path.startswith("/api/"):
-        response.headers["Deprecation"] = "true"
-        response.headers["Link"] = f'<{request.url.path.replace("/api/", "/api/v1/", 1)}>; rel="successor-version"'
     return response
 
 
@@ -386,15 +399,16 @@ def _observe_request(metrics: dict[str, object] | None, started: float, status_c
 @app.middleware("http")
 async def authenticate_request(request: Request, call_next):
     path = request.url.path
+    if path == "/api/v1":
+        path = "/api"
+    elif path.startswith("/api/v1/"):
+        path = "/api" + path[len("/api/v1"):]
     public = path in {
         "/healthz",
         "/api/auth/status",
         "/api/auth/register",
         "/api/auth/login",
-        "/api/v1",
-        "/api/v1/auth/status",
-        "/api/v1/auth/register",
-        "/api/v1/auth/login",
+        "/api",
     }
     started = time.perf_counter()
     metrics = getattr(app.state, "metrics", None)

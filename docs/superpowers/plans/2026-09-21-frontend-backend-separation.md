@@ -4,7 +4,7 @@
 
 **Goal:** 将当前 React 单页工作台与 FastAPI 后端演进为可独立发布的团队协作产品，同时保留现有作品生成能力、权限边界和可回滚迁移路径。
 
-**Architecture:** 采用“契约先行、渐进拆分”的路线。后端先稳定 `/api/v1` 资源与异步任务契约，前端在独立仓库中消费版本化 OpenAPI 客户端；旧前端和旧接口在迁移窗口内继续可用。工作区资源、作品快照和 `owner/editor/viewer` 权限由后端作为唯一事实来源，前端只负责路由、展示和体验层门禁。
+**Architecture:** 采用“契约先行、渐进拆分”的路线。后端提供稳定的 `/api/v1` 资源与异步任务契约，前端在独立仓库中消费版本化 OpenAPI 客户端；稳定窗口结束后旧前端和旧接口已下线。工作区资源、作品快照和 `owner/editor/viewer` 权限由后端作为唯一事实来源，前端只负责路由、展示和体验层门禁。
 
 **Tech Stack:** FastAPI/Pydantic/SQLite（后续可迁移 PostgreSQL）、React 19 + Vite + TypeScript、OpenAPI 生成 TypeScript 客户端、Playwright、Vitest、Docker/Nginx、GitHub Actions。
 
@@ -17,7 +17,7 @@
 - 所有新增资源必须带 `workspace_id/tenant_id`、稳定 ID、创建/更新时间、状态和版本信息。
 - 作品创建和生成任务必须记录资源版本快照，避免管理员修改资源后改变进行中的作品语义。
 - API 采用向后兼容的加法迁移；旧 `/api/*` 在迁移期保留，新的独立前端只使用 `/api/v1/*`。
-- 生产切换必须有旧前端镜像、数据库备份和可验证的回滚步骤。
+- 生产切换必须有已发布镜像 tag、数据库备份和可验证的恢复步骤。
 - 不在本计划第一阶段引入完全通用的配置表；内容类型、风格、创作模板、质量策略分立建模。
 
 ---
@@ -268,13 +268,13 @@
 - Create: `scripts/migration_preflight.py`
 - Create: `scripts/migration_verify.py`
 - Create: `docs/migrations/frontend-cutover-runbook.md`
-- Create: `frontend-legacy/README.md`（旧入口保留说明）
+- Delete: `frontend-legacy/`（稳定窗口结束后移除旧回滚入口）
 
 - [x] 提供副本数据库迁移 preflight/verify 脚本，覆盖资源快照、备份、健康检查和就绪检查；实际演练按 runbook 执行。
 - [x] 新前端提供独立镜像，可先以独立域名或 `/next` 路径部署并执行只读 smoke test。
 - [x] Runbook 覆盖作品列表、登录、资源读取、创建作品、启动任务和 viewer 只读灰度链路。
 - [x] 切换前门禁覆盖备份、API 兼容、Cookie/CSRF、SSE 续传、导入导出和权限矩阵。
-- [x] Runbook 定义旧前端镜像/旧路由回滚；数据库迁移要求向后兼容字段。
+- [x] Runbook 定义迁移期间的旧前端镜像/旧路由回滚；稳定窗口结束后仅保留发布系统级镜像与数据库恢复流程。
 - [x] Runbook 定义稳定窗口后再删除旧前端构建和旧 API 别名。
 
 ### Task 13: 安全、可观测性和发布门槛
@@ -300,8 +300,8 @@
 - Modify: `.github/workflows/ci.yml`
 
 - [x] 新前端已覆盖登录、工作区、作品、任务/SSE、权限、导入导出和备份等关键用户路径；独立前端的 check（类型、单元测试、构建）通过，浏览器 E2E 已纳入联调发布清单。
-- [x] 旧 `/api/*` 别名已进入弃用期，响应返回 `Deprecation: true` 和 successor `Link`，迁移指引记录在切换 runbook 中；稳定窗口结束前继续保留兼容别名。
-- [x] 已完成迁移演练、备份与回滚门禁，后端不再包含旧 `frontend/` 构建；`frontend-legacy/` 仅保留回滚说明。
+- [x] 旧 `/api/*` 别名已在稳定窗口结束后移除；请求返回 410、request_id 和 `/api/v1` successor `Link`，迁移指引记录在切换 runbook 中。
+- [x] 已完成迁移演练、备份与恢复门禁，后端不再包含旧 `frontend/` 构建和 `frontend-legacy/` 回滚入口。
 - [x] 后端仓库只保留 API、Agent、任务、数据和部署契约；前端仓库负责页面、客户端和前端发布。
 - [x] 已更新本地开发、生产部署、贡献指南和故障排查文档，Compose 仅编排 API 服务。
 
@@ -313,7 +313,7 @@
 4. **M3 资源中心可用：** owner 管理资源、editor 使用资源、viewer 只读，作品产生快照。
 5. **M4 工作流 parity：** 写作、规划、知识、质量、任务恢复、导入导出和模型设置全部迁移。
 6. **M5 灰度切换：** 新旧前端可切换，迁移和回滚演练通过。
-7. **M6 旧入口下线：** 稳定窗口结束后移除旧前端构建和兼容别名。
+7. **M6 旧入口下线：** 已完成稳定窗口，旧前端构建和兼容别名已移除。
 
 ## Main Risks and Mitigations
 

@@ -50,10 +50,10 @@ async def test_v1_job_events_have_resumable_envelope(api_env, fake_llm):
 async def test_v1_job_access_is_workspace_scoped(api_env):
     api_env.cfg.auth_enabled = True
     async with AsyncClient(transport=ASGITransport(app=api_env.app), base_url="http://test") as client:
-        alice = (await client.post("/api/auth/register", json={
+        alice = (await client.post("/api/v1/auth/register", json={
             "username": "jobs_alice", "password": "alice-password", "tenant_name": "Alice",
         })).json()
-        bob = (await client.post("/api/auth/register", json={
+        bob = (await client.post("/api/v1/auth/register", json={
             "username": "jobs_bob", "password": "bob-password", "tenant_name": "Bob",
         })).json()
         bob_headers = {"Authorization": f"Bearer {bob['access_token']}"}

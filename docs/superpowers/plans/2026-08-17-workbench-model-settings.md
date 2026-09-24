@@ -37,7 +37,7 @@
 - Modify: `.env.example`
 - Test: `tests/test_config.py`
 
-- [ ] **Step 1: Write the failing configuration test**
+- [x] **Step 1: Write the failing configuration test**
 
 Add a test that proves the master-key parent directory is created:
 
@@ -54,7 +54,7 @@ def test_config_creates_model_secret_key_parent(tmp_path):
     assert key_path.parent.is_dir()
 ```
 
-- [ ] **Step 2: Verify the test fails for the missing field**
+- [x] **Step 2: Verify the test fails for the missing field**
 
 Run:
 
@@ -64,7 +64,7 @@ uv run --isolated --with ".[dev]" pytest tests/test_config.py::test_config_creat
 
 Expected: FAIL because `Config` ignores `model_secret_key_path` and does not create its parent.
 
-- [ ] **Step 3: Add the path and dependency**
+- [x] **Step 3: Add the path and dependency**
 
 Add to `Config` and `ensure_dirs()`:
 
@@ -80,11 +80,11 @@ Add `cryptography>=46.0` to project dependencies and document:
 MODEL_SECRET_KEY_PATH=data/model-settings.key
 ```
 
-- [ ] **Step 4: Verify the configuration test passes**
+- [x] **Step 4: Verify the configuration test passes**
 
 Run the same targeted pytest command. Expected: PASS.
 
-- [ ] **Step 5: Commit the configuration change**
+- [x] **Step 5: Commit the configuration change**
 
 ```powershell
 git add config.py pyproject.toml .env.example tests/test_config.py
@@ -97,7 +97,7 @@ git commit -m "feat: configure encrypted model settings"
 - Create: `models/model_settings.py`
 - Create: `tests/test_model_settings.py`
 
-- [ ] **Step 1: Write failing tests for encrypted profiles**
+- [x] **Step 1: Write failing tests for encrypted profiles**
 
 Cover creation, redaction, key retention, and explicit clearing:
 
@@ -139,7 +139,7 @@ def test_missing_master_key_does_not_replace_key_for_existing_ciphertext(setting
     assert not settings_store.key_path.exists()
 ```
 
-- [ ] **Step 2: Run tests and confirm the module is missing**
+- [x] **Step 2: Run tests and confirm the module is missing**
 
 ```powershell
 uv run --isolated --with ".[dev]" pytest tests/test_model_settings.py -vv
@@ -147,7 +147,7 @@ uv run --isolated --with ".[dev]" pytest tests/test_model_settings.py -vv
 
 Expected: collection ERROR for missing `models.model_settings`.
 
-- [ ] **Step 3: Implement provider templates and encrypted profiles**
+- [x] **Step 3: Implement provider templates and encrypted profiles**
 
 Implement these public contracts in `models/model_settings.py`:
 
@@ -201,11 +201,11 @@ The required method signatures are:
 
 Use `Fernet.generate_key()` only when saving the first secret. Write the key to a temporary sibling file and atomically replace the target. If encrypted rows exist and the key file is absent or invalid, raise `ModelSecretError` without generating a replacement.
 
-- [ ] **Step 4: Verify profile tests pass**
+- [x] **Step 4: Verify profile tests pass**
 
 Run `pytest tests/test_model_settings.py -vv`. Expected: profile tests PASS.
 
-- [ ] **Step 5: Add failing route transaction tests**
+- [x] **Step 5: Add failing route transaction tests**
 
 ```python
 def test_routes_update_atomically_and_block_profile_deletion(settings_store):
@@ -227,11 +227,11 @@ def test_anthropic_cannot_be_embedding_route(settings_store):
         settings_store.save_routes(three_routes_using(anthropic["id"]))
 ```
 
-- [ ] **Step 6: Implement route validation and transactions**
+- [x] **Step 6: Implement route validation and transactions**
 
 Add `save_routes()`, `get_routes()`, `get_public_settings()`, `ProfileInUseError`, and `InvalidModelRouteError`. Validate all three routes before opening the write transaction, then upsert all three in one transaction.
 
-- [ ] **Step 7: Run store tests and commit**
+- [x] **Step 7: Run store tests and commit**
 
 ```powershell
 uv run --isolated --with ".[dev]" pytest tests/test_model_settings.py -vv
@@ -247,7 +247,7 @@ git commit -m "feat: persist encrypted model profiles"
 - Modify: `models/llm.py`
 - Modify: `memory/vector_store.py`
 
-- [ ] **Step 1: Write failing resolution tests**
+- [x] **Step 1: Write failing resolution tests**
 
 Use monkeypatched constructors to assert protocol mapping without network calls:
 
@@ -280,11 +280,11 @@ def test_updated_route_does_not_reuse_old_client(settings_store, monkeypatch):
     assert built == ["gpt-4o", "gpt-4.1"]
 ```
 
-- [ ] **Step 2: Confirm resolver tests fail**
+- [x] **Step 2: Confirm resolver tests fail**
 
 Run `pytest tests/test_model_resolver.py -vv`. Expected: missing resolver module.
 
-- [ ] **Step 3: Implement the resolver and cached factories**
+- [x] **Step 3: Implement the resolver and cached factories**
 
 Define the frozen value object below:
 
@@ -313,7 +313,7 @@ Keep caching inside factories keyed by the full frozen `ResolvedModel`, temperat
 
 Environment fallback maps `Config.llm_provider/model_name` to creative and analysis, and maps `Config.openai_api_key/embedding_model` to embedding. Raise `ModelConfigurationError` with purpose-specific Chinese messages when a required key or route is missing.
 
-- [ ] **Step 4: Delegate existing model entry points**
+- [x] **Step 4: Delegate existing model entry points**
 
 Preserve call-site compatibility:
 
@@ -333,7 +333,7 @@ def get_analyzer_llm() -> BaseChatModel:
 
 Change `NovelMemory` to call `ModelResolver(config=self.config).embeddings()` instead of constructing `OpenAIEmbeddings` directly.
 
-- [ ] **Step 5: Verify resolver and existing agent tests**
+- [x] **Step 5: Verify resolver and existing agent tests**
 
 ```powershell
 uv run --isolated --with ".[dev]" pytest tests/test_model_resolver.py tests/test_structured_agents.py tests/test_graph_flow.py -vv
@@ -341,7 +341,7 @@ uv run --isolated --with ".[dev]" pytest tests/test_model_resolver.py tests/test
 
 Expected: all selected tests PASS.
 
-- [ ] **Step 6: Commit runtime routing**
+- [x] **Step 6: Commit runtime routing**
 
 ```powershell
 git add models/resolver.py models/llm.py memory/vector_store.py tests/test_model_resolver.py
@@ -355,11 +355,11 @@ git commit -m "feat: route agents through selected models"
 - Modify: `api/server.py`
 - Modify: `tests/test_api.py`
 
-- [ ] **Step 1: Extend the isolated API fixture**
+- [x] **Step 1: Extend the isolated API fixture**
 
 Ensure lifespan builds a `ModelSettingsStore(cfg)` against each test's temporary SQLite and exposes it through `app.state.model_settings_store`.
 
-- [ ] **Step 2: Write failing CRUD and redaction API tests**
+- [x] **Step 2: Write failing CRUD and redaction API tests**
 
 ```python
 async def test_model_profile_api_never_returns_plaintext_key(api_env):
@@ -386,11 +386,11 @@ async def test_delete_routed_profile_returns_409(api_env):
     assert response.status_code == 409
 ```
 
-- [ ] **Step 3: Confirm API tests fail with 404**
+- [x] **Step 3: Confirm API tests fail with 404**
 
 Run the two new tests. Expected: FAIL because `/api/model-settings` routes do not exist.
 
-- [ ] **Step 4: Implement the dedicated router**
+- [x] **Step 4: Implement the dedicated router**
 
 Create request models with bounded strings and URL validation:
 
@@ -416,7 +416,7 @@ class RoutesWrite(BaseModel):
 
 Use `Request.app.state.model_settings_store`; translate missing profiles to 404, invalid routes to 422, and `ProfileInUseError` to 409. Register the router in `api/server.py` and allow `PUT` in CORS.
 
-- [ ] **Step 5: Add active-stream conflict tests**
+- [x] **Step 5: Add active-stream conflict tests**
 
 ```python
 async def test_settings_write_returns_409_during_graph_stream(api_env):
@@ -426,11 +426,11 @@ async def test_settings_write_returns_409_during_graph_stream(api_env):
     assert response.status_code == 409
 ```
 
-- [ ] **Step 6: Track active streams and enforce the conflict**
+- [x] **Step 6: Track active streams and enforce the conflict**
 
 Initialize `active_streams = 0` in lifespan. Increment immediately before returning a graph `StreamingResponse`, decrement in `_stream_graph`'s `finally`, and reject every settings mutation while the count is nonzero. Read-only settings requests remain available.
 
-- [ ] **Step 7: Implement connection-test endpoint with mocks**
+- [x] **Step 7: Implement connection-test endpoint with mocks**
 
 Patch `ModelResolver.test_profile()` in tests to cover successful chat, successful embedding, sanitized authentication failure, and sanitized network failure. Return:
 
@@ -440,7 +440,7 @@ Patch `ModelResolver.test_profile()` in tests to cover successful chat, successf
 
 Do not return raw exception representations.
 
-- [ ] **Step 8: Run API tests and commit**
+- [x] **Step 8: Run API tests and commit**
 
 ```powershell
 uv run --isolated --with ".[dev]" pytest tests/test_api.py tests/test_model_settings.py -vv
@@ -457,7 +457,7 @@ git commit -m "feat: expose redacted model settings api"
 - Modify: `tests/test_api.py`
 - Modify: `tests/test_cli.py`
 
-- [ ] **Step 1: Write failing API preflight tests**
+- [x] **Step 1: Write failing API preflight tests**
 
 ```python
 async def test_run_rejects_missing_model_configuration_before_stream(api_env, monkeypatch):
@@ -472,19 +472,19 @@ async def test_run_rejects_missing_model_configuration_before_stream(api_env, mo
 
 Add the same expectation for `/resume` so a paused graph remains untouched after preflight failure.
 
-- [ ] **Step 2: Confirm tests fail because run starts streaming**
+- [x] **Step 2: Confirm tests fail because run starts streaming**
 
 Run the two targeted tests. Expected: status differs from 409.
 
-- [ ] **Step 3: Validate immediately after acquiring each novel lock**
+- [x] **Step 3: Validate immediately after acquiring each novel lock**
 
 Instantiate `ModelResolver(config=cfg, store=app.state.model_settings_store)` and call `validate_runtime()` before reading or driving graph state. Translate `ModelConfigurationError` to HTTP 409 and release the novel lock through the existing exception path.
 
-- [ ] **Step 4: Add CLI and Streamlit diagnostics**
+- [x] **Step 4: Add CLI and Streamlit diagnostics**
 
 At startup, validate configuration before generating or resuming. CLI exits through `parser.error()` with the resolver message. Streamlit renders the message and directs the user to the React workbench settings without deleting or changing checkpoints.
 
-- [ ] **Step 5: Run entry-point tests and commit**
+- [x] **Step 5: Run entry-point tests and commit**
 
 ```powershell
 uv run --isolated --with ".[dev]" pytest tests/test_api.py tests/test_cli.py tests/test_ui_runtime.py -vv
@@ -502,7 +502,7 @@ git commit -m "fix: validate model routes before generation"
 - Modify: `frontend/package-lock.json`
 - Create: `frontend/src/useModelSettings.test.tsx`
 
-- [ ] **Step 1: Add the frontend test runner**
+- [x] **Step 1: Add the frontend test runner**
 
 Install `vitest`, `jsdom`, `@testing-library/react`, and `@testing-library/user-event` as dev dependencies. Add:
 
@@ -513,7 +513,7 @@ Install `vitest`, `jsdom`, `@testing-library/react`, and `@testing-library/user-
 
 Configure Vitest with `environment: "jsdom"` in `vite.config.ts`.
 
-- [ ] **Step 2: Define the public TypeScript contract**
+- [x] **Step 2: Define the public TypeScript contract**
 
 Add exact interfaces matching the API:
 
@@ -545,7 +545,7 @@ export interface ModelSettings {
 }
 ```
 
-- [ ] **Step 3: Write failing hook tests**
+- [x] **Step 3: Write failing hook tests**
 
 Mock only the HTTP module and verify real hook state transitions:
 
@@ -559,7 +559,7 @@ it("reloads redacted settings after saving a profile", async () => {
 });
 ```
 
-- [ ] **Step 4: Confirm hook tests fail**
+- [x] **Step 4: Confirm hook tests fail**
 
 ```powershell
 npm.cmd --prefix frontend test -- useModelSettings.test.tsx
@@ -567,11 +567,11 @@ npm.cmd --prefix frontend test -- useModelSettings.test.tsx
 
 Expected: FAIL because the hook and API functions are missing.
 
-- [ ] **Step 5: Implement API functions and hook**
+- [x] **Step 5: Implement API functions and hook**
 
 Add `getModelSettings`, `createModelProfile`, `updateModelProfile`, `deleteModelProfile`, `saveModelRoutes`, and `testModelProfile`. The hook owns loading, saving, testing, deleting, route-saving, error, and last success message state. Reload settings after every successful mutation.
 
-- [ ] **Step 6: Run hook tests and commit**
+- [x] **Step 6: Run hook tests and commit**
 
 ```powershell
 npm.cmd --prefix frontend test -- useModelSettings.test.tsx
@@ -589,7 +589,7 @@ git commit -m "feat: add model settings client state"
 - Modify: `frontend/src/App.tsx`
 - Modify: `frontend/src/styles.css`
 
-- [ ] **Step 1: Write failing dialog interaction tests**
+- [x] **Step 1: Write failing dialog interaction tests**
 
 Cover opening, redacted key behavior, save, route tab, and running-state disabling:
 
@@ -608,15 +608,15 @@ it("disables all mutations while a novel is running", () => {
 });
 ```
 
-- [ ] **Step 2: Confirm component tests fail**
+- [x] **Step 2: Confirm component tests fail**
 
 Run `npm.cmd --prefix frontend test -- ModelSettingsDialog.test.tsx`. Expected: missing component failure.
 
-- [ ] **Step 3: Build the dialog shell and entry point**
+- [x] **Step 3: Build the dialog shell and entry point**
 
 Add a `Settings` icon button from Lucide to the topbar with `title="模型设置"`. Render an accessible dialog with `role="dialog"`, `aria-modal="true"`, Escape-to-close, backdrop click, focusable close button, and two tabs named “模型服务” and “模型分工”. Keep the dialog mounted only while open so secret inputs are discarded on close.
 
-- [ ] **Step 4: Implement the profile editor**
+- [x] **Step 4: Implement the profile editor**
 
 Use native controls appropriate to the data:
 
@@ -629,15 +629,15 @@ Use native controls appropriate to the data:
 
 Deleting requires `window.confirm`. Choosing a built-in provider pre-fills template values only for a new profile and never overwrites an existing edited profile.
 
-- [ ] **Step 5: Implement route selectors**
+- [x] **Step 5: Implement route selectors**
 
 Each purpose row contains a profile selector and an editable model selector. Filter embedding profiles to non-Anthropic profiles. Disable “保存模型分工” until all three targets are valid.
 
-- [ ] **Step 6: Add responsive styling**
+- [x] **Step 6: Add responsive styling**
 
 Use a square-cornered, maximum `960px` dialog with stable grid tracks. At widths below `760px`, stack the profile list above the editor and keep dialog content scrollable within `100dvh`. Do not introduce nested cards, gradients, decorative blobs, or viewport-scaled font sizes.
 
-- [ ] **Step 7: Run component tests, typecheck, and build**
+- [x] **Step 7: Run component tests, typecheck, and build**
 
 ```powershell
 npm.cmd --prefix frontend test -- ModelSettingsDialog.test.tsx
@@ -647,7 +647,7 @@ npm.cmd --prefix frontend run build
 
 Expected: all commands exit 0.
 
-- [ ] **Step 8: Commit the workbench UI**
+- [x] **Step 8: Commit the workbench UI**
 
 ```powershell
 git add frontend/src/components/ModelSettingsDialog.tsx frontend/src/components/ModelProfilesPanel.tsx frontend/src/components/ModelRoutesPanel.tsx frontend/src/components/ModelSettingsDialog.test.tsx frontend/src/App.tsx frontend/src/styles.css
@@ -663,15 +663,15 @@ git commit -m "feat: manage model providers in workbench"
 - Modify: `docker-compose.yml`
 - Modify: `.gitignore`
 
-- [ ] **Step 1: Document the model settings workflow**
+- [x] **Step 1: Document the model settings workflow**
 
 Explain provider profiles, the three model roles, redacted-key behavior, environment fallback, `MODEL_SECRET_KEY_PATH`, and the consequence of losing the master key. State that `data/` must be backed up together with `memory/novels.db`.
 
-- [ ] **Step 2: Persist the master-key directory in containers**
+- [x] **Step 2: Persist the master-key directory in containers**
 
 Ensure Docker Compose mounts the same persistent data volume/path used by `MODEL_SECRET_KEY_PATH`. Confirm `.gitignore` includes `data/` and `*.key` without ignoring source fixtures.
 
-- [ ] **Step 3: Add frontend tests to CI**
+- [x] **Step 3: Add frontend tests to CI**
 
 After `npm ci`, run:
 
@@ -681,7 +681,7 @@ After `npm ci`, run:
 - run: npm --prefix frontend run build
 ```
 
-- [ ] **Step 4: Run focused documentation and configuration checks**
+- [x] **Step 4: Run focused documentation and configuration checks**
 
 ```powershell
 rg -n "MODEL_SECRET_KEY_PATH|模型服务|模型分工|环境配置回退" README.md .env.example docker-compose.yml
@@ -690,7 +690,7 @@ git diff --check
 
 Expected: each term is documented and `git diff --check` exits 0.
 
-- [ ] **Step 5: Commit docs and deployment changes**
+- [x] **Step 5: Commit docs and deployment changes**
 
 ```powershell
 git add README.md .github/workflows/ci.yml Dockerfile docker-compose.yml .gitignore
@@ -702,7 +702,7 @@ git commit -m "docs: document workbench model settings"
 **Files:**
 - No planned source changes; fix only failures directly caused by this feature.
 
-- [ ] **Step 1: Run the complete backend suite**
+- [x] **Step 1: Run the complete backend suite**
 
 ```powershell
 uv run --isolated --with ".[dev]" pytest -q
@@ -712,7 +712,7 @@ python -m compileall -q agents api graph memory models prompts tools ui config.p
 
 Expected: all tests pass, Ruff reports “All checks passed!”, and compileall exits 0.
 
-- [ ] **Step 2: Run the complete frontend suite**
+- [x] **Step 2: Run the complete frontend suite**
 
 ```powershell
 npm.cmd --prefix frontend test
@@ -722,7 +722,7 @@ npm.cmd --prefix frontend run build
 
 Expected: Vitest, TypeScript, and Vite all exit 0.
 
-- [ ] **Step 3: Run browser QA at desktop and mobile widths**
+- [x] **Step 3: Run browser QA at desktop and mobile widths**
 
 Start FastAPI and Vite, then verify through the browser:
 
@@ -736,7 +736,7 @@ Start FastAPI and Vite, then verify through the browser:
 8. Check `1440x900`, `768x1024`, and `390x844` for overflow and overlap.
 9. Confirm the browser console contains no errors.
 
-- [ ] **Step 4: Build the container**
+- [x] **Step 4: Build the container**
 
 ```powershell
 docker build -t novel-agent:test .
@@ -745,7 +745,7 @@ docker compose config
 
 Expected: image build and Compose validation succeed. If Docker is unavailable, record that exact limitation without claiming container verification.
 
-- [ ] **Step 5: Inspect the final diff and security invariants**
+- [x] **Step 5: Inspect the final diff and security invariants**
 
 ```powershell
 git diff --check
@@ -755,6 +755,6 @@ git status --short
 
 Manually confirm no API response model exposes `api_key`, no log statement includes secrets, no runtime `.key` or SQLite file is staged, and only intended feature files changed.
 
-- [ ] **Step 6: Commit any verification-only fixes**
+- [x] **Step 6: Commit any verification-only fixes**
 
 If verification required source fixes, stage only those exact files and commit with a message describing the verified defect. If no fixes were needed, do not create an empty commit.

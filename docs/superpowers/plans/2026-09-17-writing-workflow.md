@@ -63,7 +63,7 @@
 - Produces: `RunConnectionStatus`, `UseRunJobOptions`, and `useRunJob()` returning `{ connectionStatus, isStreaming, startJob, cancelJob, retry }`.
 - `startJob(novelId, createJob)` accepts `createJob: () => Promise<RunJob>` so run, resume, candidate, canon, and book-revision jobs share one lifecycle.
 
-- [ ] **Step 1: Write failing lifecycle tests**
+- [x] **Step 1: Write failing lifecycle tests**
 
 ```tsx
 it("reconnects after a transient polling failure without losing the event sequence", async () => {
@@ -92,13 +92,13 @@ it("drops events after the selected novel changes", async () => {
 });
 ```
 
-- [ ] **Step 2: Run the hook tests and verify the new module is missing**
+- [x] **Step 2: Run the hook tests and verify the new module is missing**
 
 Run: `cd frontend && npm test -- useRunJob.test.tsx`
 
 Expected: FAIL because `./useRunJob` does not exist.
 
-- [ ] **Step 3: Implement the run-job controller**
+- [x] **Step 3: Implement the run-job controller**
 
 ```ts
 export type RunConnectionStatus = "idle" | "polling" | "reconnecting" | "failed";
@@ -122,19 +122,19 @@ export function useRunJob(options: UseRunJobOptions) {
 
 `retry()` resumes polling the current persisted job from its last acknowledged sequence without creating a second job. Replace the polling refs and loop in `useWorkbench` with the controller. Route every job-producing command through `startJob`; preserve the current `handleEvent`, state updates, and post-settlement refresh behavior. Expose `retryRunConnection: retry` from `useWorkbench` for the status bar.
 
-- [ ] **Step 4: Run focused hook and integration tests**
+- [x] **Step 4: Run focused hook and integration tests**
 
 Run: `cd frontend && npm test -- useRunJob.test.tsx useWorkbench.test.tsx`
 
 Expected: both test files PASS, including existing active-job reconnect and stale-project cases.
 
-- [ ] **Step 5: Run type checking**
+- [x] **Step 5: Run type checking**
 
 Run: `cd frontend && npm run typecheck`
 
 Expected: PASS with no TypeScript errors.
 
-- [ ] **Step 6: Commit the controller extraction**
+- [x] **Step 6: Commit the controller extraction**
 
 ```bash
 git add frontend/src/useRunJob.ts frontend/src/useRunJob.test.tsx frontend/src/useWorkbench.ts frontend/src/useWorkbench.test.tsx
@@ -155,7 +155,7 @@ git commit -m "refactor(frontend): isolate persisted run jobs"
 - Consumes: `NovelStatus`, `RunJob`, `RunConnectionStatus`, current chapter counts, and existing `STAGES` labels.
 - Produces: `WritingStatusBar` with `onRun`, `onCancel`, and `onRetry` commands.
 
-- [ ] **Step 1: Write failing status rendering tests**
+- [x] **Step 1: Write failing status rendering tests**
 
 ```tsx
 it("shows the current node and stop action while running", async () => {
@@ -174,13 +174,13 @@ it("announces reconnecting without replacing the last known node", () => {
 });
 ```
 
-- [ ] **Step 2: Run the component test and verify failure**
+- [x] **Step 2: Run the component test and verify failure**
 
 Run: `cd frontend && npm test -- WritingStatusBar.test.tsx`
 
 Expected: FAIL because `WritingStatusBar` does not exist.
 
-- [ ] **Step 3: Implement status mapping and stable controls**
+- [x] **Step 3: Implement status mapping and stable controls**
 
 ```tsx
 const STATUS_COPY: Record<NovelStatus, { label: string; detail: string }> = {
@@ -198,13 +198,13 @@ const STATUS_COPY: Record<NovelStatus, { label: string; detail: string }> = {
 
 Render chapter progress, last known node, connection state, and exactly one primary control appropriate to the status. Keep a fixed minimum height so text changes do not shift the reader.
 
-- [ ] **Step 4: Run component tests and type checking**
+- [x] **Step 4: Run component tests and type checking**
 
 Run: `cd frontend && npm test -- WritingStatusBar.test.tsx && npm run typecheck`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit the status bar**
+- [x] **Step 5: Commit the status bar**
 
 ```bash
 git add frontend/src/components/WritingStatusBar.tsx frontend/src/components/WritingStatusBar.test.tsx frontend/src/types.ts frontend/src/styles.css
@@ -225,7 +225,7 @@ git commit -m "feat(frontend): add writing status bar"
 - Consumes: `novelId`, `chapterNumber`, `ReviewSubmission`, and `onSubmit(review)`.
 - Produces: `ReviewTab = "decision" | "issues" | "candidates" | "versions"`, `ReviewBusyAction`, and a controller containing scope, feedback, active tab, error, and commands.
 
-- [ ] **Step 1: Write failing review-state tests**
+- [x] **Step 1: Write failing review-state tests**
 
 ```tsx
 it("keeps feedback and scope when submission fails", async () => {
@@ -249,13 +249,13 @@ it("clears feedback and scope after a successful draft replacement", async () =>
 });
 ```
 
-- [ ] **Step 2: Run tests and verify failure**
+- [x] **Step 2: Run tests and verify failure**
 
 Run: `cd frontend && npm test -- useReviewWorkflow.test.tsx ReviewDecisionPanel.test.tsx`
 
 Expected: FAIL because both modules are missing.
 
-- [ ] **Step 3: Implement the review controller**
+- [x] **Step 3: Implement the review controller**
 
 ```ts
 export type ReviewTab = "decision" | "issues" | "candidates" | "versions";
@@ -269,7 +269,7 @@ export function useReviewWorkflow({ novelId, chapterNumber, onSubmit }: Options)
 }
 ```
 
-- [ ] **Step 4: Implement the controlled decision form**
+- [x] **Step 4: Implement the controlled decision form**
 
 ```tsx
 <ReviewDecisionPanel
@@ -288,13 +288,13 @@ export function useReviewWorkflow({ novelId, chapterNumber, onSubmit }: Options)
 
 The panel must label the textarea as either whole-chapter or scene feedback and disable revision when feedback is blank.
 
-- [ ] **Step 5: Run focused tests and type checking**
+- [x] **Step 5: Run focused tests and type checking**
 
 Run: `cd frontend && npm test -- useReviewWorkflow.test.tsx ReviewDecisionPanel.test.tsx && npm run typecheck`
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit review-state isolation**
+- [x] **Step 6: Commit review-state isolation**
 
 ```bash
 git add frontend/src/useReviewWorkflow.ts frontend/src/useReviewWorkflow.test.tsx frontend/src/components/ReviewDecisionPanel.tsx frontend/src/components/ReviewDecisionPanel.test.tsx
@@ -314,7 +314,7 @@ git commit -m "refactor(frontend): isolate review workflow state"
 - Consumes: existing `Draft.scene_drafts`, optional `selectedSceneNumber`, and monotonically increasing `focusRequest`.
 - Produces: addressable sections with `data-scene-number` and visible selected-scene treatment.
 
-- [ ] **Step 1: Write failing scene focus tests**
+- [x] **Step 1: Write failing scene focus tests**
 
 ```tsx
 it("renders scene drafts as addressable manuscript sections", () => {
@@ -332,13 +332,13 @@ it("scrolls the selected scene after a focus request", () => {
 });
 ```
 
-- [ ] **Step 2: Run the reader tests and verify failure**
+- [x] **Step 2: Run the reader tests and verify failure**
 
 Run: `cd frontend && npm test -- ChapterReader.test.tsx`
 
 Expected: FAIL because scene-aware props and sections are absent.
 
-- [ ] **Step 3: Implement scene rendering with content fallback**
+- [x] **Step 3: Implement scene rendering with content fallback**
 
 ```tsx
 const sceneRefs = useRef(new Map<number, HTMLElement>());
@@ -351,13 +351,13 @@ useEffect(() => {
 
 When `scene_drafts` exists, render each scene in order. When it is absent, continue rendering `draft.content` exactly as today.
 
-- [ ] **Step 4: Run reader and existing review tests**
+- [x] **Step 4: Run reader and existing review tests**
 
 Run: `cd frontend && npm test -- ChapterReader.test.tsx ReviewPanel.test.tsx`
 
 Expected: PASS before `ReviewPanel` is removed in Task 5.
 
-- [ ] **Step 5: Commit scene-aware reading**
+- [x] **Step 5: Commit scene-aware reading**
 
 ```bash
 git add frontend/src/components/ChapterReader.tsx frontend/src/components/ChapterReader.test.tsx frontend/src/styles.css
@@ -385,7 +385,7 @@ git commit -m "feat(frontend): focus manuscript scenes"
 - Produces: accessible review tabs and a `ReviewDecisionPanel` that remains visible within the decision tab while its body scrolls.
 - Candidate adoption and version restoration call `workflow.replaceDraft(...)` so successful replacement resets and focuses the reader.
 
-- [ ] **Step 1: Write failing accessible-tab and workflow tests**
+- [x] **Step 1: Write failing accessible-tab and workflow tests**
 
 ```tsx
 it("switches among decision, issues, candidates, and versions", async () => {
@@ -406,17 +406,17 @@ it("selects a scene and submits scene-scoped feedback", async () => {
 });
 ```
 
-- [ ] **Step 2: Run review workspace tests and verify failure**
+- [x] **Step 2: Run review workspace tests and verify failure**
 
 Run: `cd frontend && npm test -- ReviewWorkspace.test.tsx`
 
 Expected: FAIL because `ReviewWorkspace` does not exist.
 
-- [ ] **Step 3: Move issues and quality display into `ReviewIssuesPanel`**
+- [x] **Step 3: Move issues and quality display into `ReviewIssuesPanel`**
 
 Keep existing conflict evidence expansion, canon repair, revision-feedback repair, severity labels, and quality gate scores. Accept controlled `disabled` and `busyAction` props rather than owning submission state.
 
-- [ ] **Step 4: Implement accessible review tabs**
+- [x] **Step 4: Implement accessible review tabs**
 
 ```tsx
 <div className="review-tabs" role="tablist" aria-label="章节审稿工具">
@@ -429,21 +429,21 @@ Keep existing conflict evidence expansion, canon repair, revision-feedback repai
 
 Tabs are `decision`, `issues`, `candidates`, and `versions`; hide only supporting tabs whose source data and command are both unavailable. The decision tab is always present and renders `ReviewDecisionPanel` in a sticky dock inside that tab.
 
-- [ ] **Step 5: Route candidate and version replacements through the workflow**
+- [x] **Step 5: Route candidate and version replacements through the workflow**
 
 Add `onSelected?: () => void` to `ChapterCandidatesPanel` and `onRestored?: () => void` to `VersionHistory`. Invoke each callback only after the corresponding promise resolves. In `ReviewWorkspace`, pass callbacks that return to the decision tab and request reader focus.
 
-- [ ] **Step 6: Remove the old monolithic review component**
+- [x] **Step 6: Remove the old monolithic review component**
 
 Delete `ReviewPanel.tsx` and its test after all behaviors are represented in `ReviewWorkspace.test.tsx`, `ReviewDecisionPanel.test.tsx`, and the existing child tests.
 
-- [ ] **Step 7: Run all review-related tests and type checking**
+- [x] **Step 7: Run all review-related tests and type checking**
 
 Run: `cd frontend && npm test -- ReviewWorkspace.test.tsx ReviewDecisionPanel.test.tsx ChapterCandidatesPanel.test.tsx VersionHistory.test.tsx ChapterEvaluationPanel.test.tsx && npm run typecheck`
 
 Expected: PASS.
 
-- [ ] **Step 8: Commit the review workspace**
+- [x] **Step 8: Commit the review workspace**
 
 ```bash
 git add frontend/src/components frontend/src/styles.css
@@ -469,7 +469,7 @@ git commit -m "feat(frontend): unify chapter review workflow"
 - Consumes: selected `Novel`, `WorkbenchState`, `connectionStatus`, `lastNode`, and existing workbench commands.
 - Produces: one component boundary for every `workspaceView === "write"` state.
 
-- [ ] **Step 1: Write failing composition tests**
+- [x] **Step 1: Write failing composition tests**
 
 ```tsx
 it("shows reader, status, and review workspace during human review", () => {
@@ -487,13 +487,13 @@ it("hands planning review back to the planning workspace", async () => {
 });
 ```
 
-- [ ] **Step 2: Run the composition test and verify failure**
+- [x] **Step 2: Run the composition test and verify failure**
 
 Run: `cd frontend && npm test -- WritingWorkspace.test.tsx`
 
 Expected: FAIL because `WritingWorkspace` does not exist.
 
-- [ ] **Step 3: Implement the writing composition boundary**
+- [x] **Step 3: Implement the writing composition boundary**
 
 ```tsx
 <section className={`writing-workspace ${state.status === "human_review" ? "is-reviewing" : ""}`}>
@@ -507,11 +507,11 @@ Expected: FAIL because `WritingWorkspace` does not exist.
 
 Keep planning-review and completed-book handoff messages, but render them inside the stable writing grid. `WritingNextAction` can remain private to `WritingWorkspace.tsx` because it has no independent domain behavior.
 
-- [ ] **Step 4: Replace the `App.tsx` write-view branch**
+- [x] **Step 4: Replace the `App.tsx` write-view branch**
 
 Pass commands from `useWorkbench` into `WritingWorkspace`, including `retryRunConnection`. Remove direct imports of `ChapterReader`, `ReviewPanel`, and `RunControlPanel` from `App.tsx`, then delete the unused `RunControlPanel` module and its test. Preserve all non-writing views and dialogs unchanged.
 
-- [ ] **Step 5: Add responsive layout rules**
+- [x] **Step 5: Add responsive layout rules**
 
 Desktop: status bar spans the full writing width, reader is `minmax(0, 1fr)`, review is constrained to `360px`–`430px`.
 
@@ -519,13 +519,13 @@ At `max-width: 980px`: use a single column and place review after the reader.
 
 At `max-width: 680px`: decision dock returns to normal flow, tabs scroll horizontally, and no fixed element overlaps the soft keyboard.
 
-- [ ] **Step 6: Run workspace, app, and existing navigation tests**
+- [x] **Step 6: Run workspace, app, and existing navigation tests**
 
 Run: `cd frontend && npm test -- WritingWorkspace.test.tsx WorkspaceNav.test.tsx useWorkbench.test.tsx && npm run typecheck`
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit workspace integration**
+- [x] **Step 7: Commit workspace integration**
 
 ```bash
 git add frontend/src/App.tsx frontend/src/useWorkbench.ts frontend/src/types.ts frontend/src/components/WritingWorkspace.tsx frontend/src/components/WritingWorkspace.test.tsx frontend/src/components/RunControlPanel.tsx frontend/src/components/RunControlPanel.test.tsx frontend/src/styles.css frontend/src/workspace.css
@@ -544,19 +544,19 @@ git commit -m "feat(frontend): integrate writing workflow workspace"
 - Consumes: all components and hooks delivered by Tasks 1–6.
 - Produces: verified desktop/mobile workflow with no backend contract change.
 
-- [ ] **Step 1: Run the full frontend suite**
+- [x] **Step 1: Run the full frontend suite**
 
 Run: `cd frontend && npm test`
 
 Expected: all test files PASS with zero failed tests.
 
-- [ ] **Step 2: Run TypeScript and production build checks**
+- [x] **Step 2: Run TypeScript and production build checks**
 
 Run: `cd frontend && npm run typecheck && npm run build`
 
 Expected: both commands exit 0 and Vite emits `frontend/dist`.
 
-- [ ] **Step 3: Run backend compatibility checks**
+- [x] **Step 3: Run backend compatibility checks**
 
 Run: `python -m pytest -q`
 
@@ -570,7 +570,7 @@ Run: `python -m scripts.run_evaluations`
 
 Expected: exit 0 with no regression exceeding the configured threshold.
 
-- [ ] **Step 4: Start local services for browser verification**
+- [x] **Step 4: Start local services for browser verification**
 
 Run in terminal 1: `uvicorn novel_agent.api.server:app --reload`
 
@@ -578,25 +578,25 @@ Run in terminal 2: `cd frontend && npm run dev -- --host 127.0.0.1`
 
 Expected: API responds on `http://127.0.0.1:8000/readyz` and the workbench loads from the Vite URL.
 
-- [ ] **Step 5: Verify desktop workflow at 1440x900**
+- [x] **Step 5: Verify desktop workflow at 1440x900**
 
 Verify: stable status bar; readable manuscript; accessible review tabs; whole-chapter and scene scope selection; visible decision controls; candidate comparison; version comparison; no overlap or horizontal clipping.
 
-- [ ] **Step 6: Verify mobile workflow at 390x844**
+- [x] **Step 6: Verify mobile workflow at 390x844**
 
 Verify: single-column order; horizontally scrollable tabs; decision controls in document flow; no text/button overflow; candidate comparison remains navigable.
 
-- [ ] **Step 7: Verify dynamic behavior**
+- [x] **Step 7: Verify dynamic behavior**
 
 Exercise one persisted run through waiting review, a scene-scoped revision, and approval. Reload once during a running task and confirm reconnection. Switch novels during polling and confirm the first novel's events do not change the second novel.
 
-- [ ] **Step 8: Review the final diff**
+- [x] **Step 8: Review the final diff**
 
 Run: `git diff main...HEAD --check && git diff main...HEAD --stat && git status --short`
 
 Expected: no whitespace errors, only planned source/test/documentation changes, and a clean working tree after the final commit.
 
-- [ ] **Step 9: Commit verification-only adjustments if needed**
+- [x] **Step 9: Commit verification-only adjustments if needed**
 
 ```bash
 git add frontend/src README.md

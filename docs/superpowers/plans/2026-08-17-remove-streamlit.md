@@ -18,11 +18,11 @@
 - Delete: `ui/streamlit_app.py`
 - Delete: `tests/test_ui_runtime.py`
 
-- [ ] **Step 1: Delete the Streamlit package and dedicated test**
+- [x] **Step 1: Delete the Streamlit package and dedicated test**
 
 Use `apply_patch` to delete the four files listed above.
 
-- [ ] **Step 2: Confirm no Python import remains**
+- [x] **Step 2: Confirm no Python import remains**
 
 Run:
 
@@ -41,15 +41,15 @@ Expected: no matches.
 - Modify: `Dockerfile`
 - Modify: `.github/workflows/ci.yml`
 
-- [ ] **Step 1: Remove the dependency and package declarations**
+- [x] **Step 1: Remove the dependency and package declarations**
 
 Delete `streamlit>=1.60`, remove `ui` from package discovery and Ruff first-party modules, and remove `streamlit` from the version check list.
 
-- [ ] **Step 2: Remove deployment and CI paths**
+- [x] **Step 2: Remove deployment and CI paths**
 
 Delete `COPY ui ./ui` from the Dockerfile and remove `ui` from the CI Ruff command.
 
-- [ ] **Step 3: Confirm packaging references are gone**
+- [x] **Step 3: Confirm packaging references are gone**
 
 Run:
 
@@ -64,11 +64,11 @@ Expected: no matches referring to the deleted interface.
 **Files:**
 - Modify: `README.md`
 
-- [ ] **Step 1: Remove Streamlit startup and tree documentation**
+- [x] **Step 1: Remove Streamlit startup and tree documentation**
 
 Delete the Streamlit launch command and migration-interface tree entry, and remove `ui` from the documented Ruff command.
 
-- [ ] **Step 2: Confirm public documentation names React as the web interface**
+- [x] **Step 2: Confirm public documentation names React as the web interface**
 
 Run:
 
@@ -83,7 +83,7 @@ Expected: no matches.
 **Files:**
 - Verify only
 
-- [ ] **Step 1: Run backend tests and lint**
+- [x] **Step 1: Run backend tests and lint**
 
 ```powershell
 uv run --isolated --with ".[dev]" pytest -q
@@ -92,7 +92,7 @@ uvx ruff check agents graph memory tools prompts models api config.py main.py te
 
 Expected: all tests pass and Ruff reports `All checks passed!`.
 
-- [ ] **Step 2: Run frontend verification**
+- [x] **Step 2: Run frontend verification**
 
 ```powershell
 npm.cmd --prefix frontend test
@@ -102,7 +102,7 @@ npm.cmd --prefix frontend run build
 
 Expected: Vitest, TypeScript, and the Vite production build pass.
 
-- [ ] **Step 3: Check repository cleanliness**
+- [x] **Step 3: Check repository cleanliness**
 
 ```powershell
 git diff --check

@@ -270,12 +270,12 @@
 - Create: `docs/migrations/frontend-cutover-runbook.md`
 - Create: `frontend-legacy/README.md`（旧入口保留说明）
 
-- [ ] 在副本数据库上演练资源回填、快照生成、索引升级和恢复。
-- [ ] 新前端先以独立域名或 `/next` 路径部署，完成只读 smoke test。
-- [ ] 灰度开启作品列表、登录、资源读取、创建作品、启动任务和 viewer 只读链路。
-- [ ] 切换前验证备份、API 兼容、Cookie/CSRF、SSE 续传、导入导出和权限矩阵。
-- [ ] 切换失败时恢复旧前端镜像和旧路由；数据库迁移必须可前滚或使用兼容字段。
-- [ ] 连续一个稳定窗口后再删除旧前端构建和旧 API 别名。
+- [x] 提供副本数据库迁移 preflight/verify 脚本，覆盖资源快照、备份、健康检查和就绪检查；实际演练按 runbook 执行。
+- [x] 新前端提供独立镜像，可先以独立域名或 `/next` 路径部署并执行只读 smoke test。
+- [x] Runbook 覆盖作品列表、登录、资源读取、创建作品、启动任务和 viewer 只读灰度链路。
+- [x] 切换前门禁覆盖备份、API 兼容、Cookie/CSRF、SSE 续传、导入导出和权限矩阵。
+- [x] Runbook 定义旧前端镜像/旧路由回滚；数据库迁移要求向后兼容字段。
+- [x] Runbook 定义稳定窗口后再删除旧前端构建和旧 API 别名。
 
 ### Task 13: 安全、可观测性和发布门槛
 

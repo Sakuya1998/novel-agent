@@ -201,7 +201,7 @@
 - Routes: `/login`、`/register`、`/app/workspaces/:workspaceId/overview`、`/novels`、`/novels/:novelId/{overview,write,plan,knowledge,quality}`、`/settings/{members,models,resources,audit}`。
 
 - [x] 已加入 `/login`、`/register`、`/app/workspaces/:workspaceId/overview` 路由页面；主工作台状态和其余页面仍需拆分。
-- [ ] 把模型设置、监控、审计、导入导出、创作约束从弹窗入口迁移为独立页面或侧页。
+- [x] 模型设置、运行与审计、导入导出已提供 `/settings/models`、`/settings/audit`、`/settings/resources` 页面级入口；保留原组件作为页面内操作面板。
 - [x] 工作区概览已提供切换入口；作品工作台支持 `/novels/:novelId/{overview,write,plan,knowledge,quality}` 深链接、刷新及作品/视图切换。
 - [x] viewer 进入写作、计划、设定编辑界面时只读；后端拒绝作为最终保护。
 - [ ] 处理首次加载、权限不足、资源停用、版本冲突、任务运行中、断线重连和空数据状态。

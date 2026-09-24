@@ -23,7 +23,6 @@ def require(condition: bool, message: str) -> None:
 def main() -> int:
     dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
     compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
-    nginx = (ROOT / "frontend" / "nginx.conf").read_text(encoding="utf-8")
     prometheus = yaml.safe_load((ROOT / "deploy" / "prometheus.yml").read_text(encoding="utf-8"))
     alerts = yaml.safe_load((ROOT / "deploy" / "novel-agent-alerts.yml").read_text(encoding="utf-8"))
 
@@ -62,8 +61,7 @@ def main() -> int:
 
     services = compose.get("services", {})
     api = services.get("api", {})
-    frontend = services.get("frontend", {})
-    require(api and frontend, "Compose 必须包含 api 和 frontend 服务")
+    require(api, "Compose 必须包含 api 服务")
     require(
         not any("chroma" in str(service_name).lower() for service_name in services),
         "Compose 不得暴露存在已知漏洞的 Chroma HTTP 服务",
@@ -72,20 +70,9 @@ def main() -> int:
     require("ALL" in api.get("cap_drop", []), "API 必须删除全部 Linux capabilities")
     require("no-new-privileges:true" in api.get("security_opt", []), "API 必须启用 no-new-privileges")
     require(api.get("restart") == "unless-stopped", "API 必须配置自动重启")
-    require(
-        frontend.get("depends_on", {}).get("api", {}).get("condition") == "service_healthy", "前端必须等待 API 就绪"
-    )
-    for service_name, service in (("api", api), ("frontend", frontend)):
+    for service_name, service in (("api", api),):
         options = service.get("logging", {}).get("options", {})
         require(options.get("max-size") and options.get("max-file"), f"{service_name} 缺少 Docker 日志轮转")
-
-    for marker in (
-        "X-Content-Type-Options",
-        "Content-Security-Policy",
-        "X-Forwarded-For",
-        "location /readyz",
-    ):
-        require(marker in nginx, f"Nginx 缺少安全/就绪配置: {marker}")
 
     require("novel-agent" in str(prometheus.get("scrape_configs", [])), "Prometheus 未配置 Novel Agent 抓取任务")
     alert_names = {

@@ -34,6 +34,15 @@ async def test_v1_auth_status_aliases_existing_auth_contract():
     assert response.headers["X-API-Version"] == "v1"
 
 
+async def test_legacy_api_exposes_v1_successor_header():
+    async with AsyncClient(transport=ASGITransport(app=server.app), base_url="http://test") as client:
+        response = await client.get("/api/auth/status")
+
+    assert response.status_code == 200
+    assert response.headers["Deprecation"] == "true"
+    assert response.headers["Link"] == '</api/v1/auth/status>; rel="successor-version"'
+
+
 async def test_v1_novel_list_uses_cursor_pagination(monkeypatch):
     novels = [{"id": f"novel_{index}"} for index in range(3)]
     monkeypatch.setattr(server.store, "list_novels", lambda: novels)

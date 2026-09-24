@@ -70,7 +70,7 @@ python main.py --resume novel_ab12cd34 --version-number 3
 uv run --locked uvicorn novel_agent.api.server:app --reload
 
 # 3c. React + TypeScript 工作台(另开终端)
-cd frontend
+cd novel-agent-frontend
 npm install
 npm run dev
 
@@ -102,7 +102,7 @@ novel-agent/
 │   ├── tools/             # 分析、评测、导入导出与备份工具
 │   └── prompts/           # Prompt 模板 + PromptManager
 ├── main.py                # 兼容 CLI 启动器
-├── frontend/              # React + TypeScript 独立工作台
+├── novel-agent-frontend/  # React + TypeScript 独立前端仓库
 ├── output/                # 导出产物
 ├── data/                  # 运行期密钥、备份与传输文件
 └── memory/                # 运行期 SQLite 与 Chroma 数据
@@ -514,7 +514,7 @@ API 额外删除全部 Linux capabilities，SQLite、checkpoint、Chroma、模�
 ```bash
 uv run --locked ruff check src scripts tests main.py
 uv run --locked pytest
-cd frontend && npm test && npm run typecheck && npm run build
+cd novel-agent-frontend && npm test && npm run typecheck && npm run build
 ```
 
 ## Docker 部署
@@ -527,6 +527,7 @@ docker run -p 8000:8000 \
 ```
 
 Docker Compose 使用命名卷保存小说数据库、检查点和主密钥，避免宿主机新建目录的所有权导致非 root 容器无法写入。
+前端已迁移到独立的 `novel-agent-frontend` 仓库；本后端仓库的 Compose 只负责 API。前端镜像、静态资源和前后端联合部署由前端仓库及发布环境单独编排。
 
 ## 可选真实模型兼容检查
 

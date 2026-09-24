@@ -52,6 +52,10 @@ class NovelState(TypedDict, total=False):
     creative_brief: dict[str, Any]  # 目标读者、视角、主题和内容边界
     creative_brief_version: int  # 当前作品级创作约束版本
     creative_brief_review_required: bool  # 约束变更后当前待审稿是否必须重新质检
+    content_type_snapshot: dict[str, Any]  # 创建时冻结的内容类型资源
+    style_snapshot: dict[str, Any]  # 创建时冻结的风格资源
+    creative_template_snapshot: dict[str, Any]  # 创建时冻结的创作模板
+    quality_policy_snapshot: dict[str, Any]  # 创建时冻结的质量策略
 
     # --- 创作状态 ---
     current_chapter: int  # 当前章节号
@@ -100,6 +104,10 @@ def create_initial_state(
     planning_review_enabled: bool = False,
     creative_brief: dict[str, Any] | None = None,
     creative_brief_version: int = 1,
+    content_type_snapshot: dict[str, Any] | None = None,
+    style_snapshot: dict[str, Any] | None = None,
+    creative_template_snapshot: dict[str, Any] | None = None,
+    quality_policy_snapshot: dict[str, Any] | None = None,
     config: Config | None = None,
 ) -> NovelState:
     """为所有入口构造一致的 LangGraph 初始状态。"""
@@ -115,6 +123,10 @@ def create_initial_state(
         "creative_brief": normalize_creative_brief(creative_brief),
         "creative_brief_version": max(int(creative_brief_version or 1), 1),
         "creative_brief_review_required": False,
+        "content_type_snapshot": dict(content_type_snapshot or {}),
+        "style_snapshot": dict(style_snapshot or {}),
+        "creative_template_snapshot": dict(creative_template_snapshot or {}),
+        "quality_policy_snapshot": dict(quality_policy_snapshot or {}),
         "current_chapter": 1,
         "current_phase": "writing",
         "max_revision_attempts": cfg.max_revision_attempts,
@@ -133,4 +145,3 @@ def create_initial_state(
         "book_revision_mode": False,
         "book_revision_origin_hash": "",
     }
-

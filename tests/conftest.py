@@ -6,6 +6,8 @@ from pathlib import Path
 import pytest
 from langchain_core.language_models.fake_chat_models import FakeListChatModel
 
+from novel_agent.api import server
+
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -92,3 +94,26 @@ def store(tmp_path):
 
     cfg = Config(sqlite_db_path=str(tmp_path / "test.db"), chroma_persist_dir=str(tmp_path / "chroma"))
     return NovelStore(cfg)
+
+
+@pytest.fixture
+async def api_env(tmp_path, monkeypatch):
+    """Isolated API app and SQLite store for API contract tests."""
+    from novel_agent.config import Config
+    from novel_agent.memory.sql_store import NovelStore
+
+    cfg = Config(
+        sqlite_db_path=str(tmp_path / "novel_agent.api.db"),
+        chroma_persist_dir=str(tmp_path / "chroma"),
+        checkpoint_db_path=str(tmp_path / "checkpoints.db"),
+        model_secret_key_path=str(tmp_path / "data" / "model-settings.key"),
+        openai_api_key="test-openai-key",
+    )
+    cfg.ensure_dirs()
+    isolated = NovelStore(cfg)
+    monkeypatch.setattr(server, "cfg", cfg)
+    monkeypatch.setattr(server, "store", isolated)
+    monkeypatch.setattr("novel_agent.graph.nodes._store", isolated)
+    server._novel_locks.clear()
+    async with server.lifespan(server.app):
+        yield server

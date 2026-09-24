@@ -15,6 +15,11 @@ from uuid import uuid4
 
 from novel_agent.config import Config
 from novel_agent.models.creative_brief import normalize_creative_brief
+from novel_agent.models.workspace_resources import (
+    default_resource_snapshots,
+    resource_snapshot,
+    system_style_resource,
+)
 from novel_agent.security import LOCAL_TENANT_ID, LOCAL_USER_ID, Principal, current_principal, current_tenant_id
 
 logger = logging.getLogger(__name__)
@@ -24,7 +29,7 @@ class NovelStore:
     """SQLite 持久化存储,管理小说/章节/进度三类记录。"""
 
     SCHEMA_COMPONENT = "novel_store"
-    SCHEMA_VERSION = 3
+    SCHEMA_VERSION = 5
 
     def __init__(self, config: Config | None = None):
         self.config = config or Config()
@@ -61,6 +66,15 @@ class NovelStore:
                     planning_review_enabled INTEGER NOT NULL DEFAULT 0,
                     creative_brief_json TEXT NOT NULL DEFAULT '{}',
                     creative_brief_version INTEGER NOT NULL DEFAULT 1,
+                    primary_type_id TEXT,
+                    resource_tags_json TEXT NOT NULL DEFAULT '[]',
+                    style_resource_id TEXT,
+                    creative_template_id TEXT,
+                    quality_policy_id TEXT,
+                    content_type_snapshot_json TEXT NOT NULL DEFAULT '{}',
+                    style_snapshot_json TEXT NOT NULL DEFAULT '{}',
+                    creative_template_snapshot_json TEXT NOT NULL DEFAULT '{}',
+                    quality_policy_snapshot_json TEXT NOT NULL DEFAULT '{}',
                     created_at TEXT,
                     updated_at TEXT
                 );
@@ -77,6 +91,28 @@ class NovelStore:
                     created_by TEXT NOT NULL,
                     created_at TEXT NOT NULL
                 );
+
+                CREATE TABLE IF NOT EXISTS workspace_resources (
+                    id TEXT NOT NULL,
+                    tenant_id TEXT NOT NULL,
+                    kind TEXT NOT NULL,
+                    key TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    description TEXT NOT NULL DEFAULT '',
+                    status TEXT NOT NULL,
+                    version INTEGER NOT NULL,
+                    is_system INTEGER NOT NULL DEFAULT 0,
+                    created_by TEXT NOT NULL,
+                    payload_json TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (id, version),
+                    UNIQUE (tenant_id, kind, key, version),
+                    FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_workspace_resources_current
+                ON workspace_resources(tenant_id, kind, id, version DESC);
 
                 CREATE TABLE IF NOT EXISTS users (
                     id TEXT PRIMARY KEY,
@@ -414,6 +450,19 @@ class NovelStore:
                 conn.execute(
                     "ALTER TABLE novels ADD COLUMN created_by TEXT NOT NULL DEFAULT 'user_local'"
                 )
+            for name, definition in (
+                ("primary_type_id", "TEXT"),
+                ("resource_tags_json", "TEXT NOT NULL DEFAULT '[]'"),
+                ("style_resource_id", "TEXT"),
+                ("creative_template_id", "TEXT"),
+                ("quality_policy_id", "TEXT"),
+                ("content_type_snapshot_json", "TEXT NOT NULL DEFAULT '{}'"),
+                ("style_snapshot_json", "TEXT NOT NULL DEFAULT '{}'"),
+                ("creative_template_snapshot_json", "TEXT NOT NULL DEFAULT '{}'"),
+                ("quality_policy_snapshot_json", "TEXT NOT NULL DEFAULT '{}'"),
+            ):
+                if name not in novel_columns:
+                    conn.execute(f"ALTER TABLE novels ADD COLUMN {name} {definition}")
             now = datetime.now(UTC).isoformat()
             conn.execute(
                 "INSERT OR IGNORE INTO tenants (id, name, created_by, created_at) VALUES (?, ?, ?, ?)",
@@ -429,6 +478,7 @@ class NovelStore:
                 "UPDATE novels SET tenant_id = ?, created_by = ? WHERE tenant_id IS NULL OR tenant_id = ''",
                 (LOCAL_TENANT_ID, LOCAL_USER_ID),
             )
+            self._backfill_novel_resource_snapshots(conn)
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_novels_tenant ON novels(tenant_id, created_at)"
             )
@@ -464,6 +514,100 @@ class NovelStore:
             rows = conn.execute("SELECT component, version FROM schema_migrations").fetchall()
         return {str(row["component"]): int(row["version"]) for row in rows}
 
+    @staticmethod
+    def _normalize_resource_tags(value: list[str] | None) -> list[str]:
+        if not isinstance(value, list):
+            return []
+        result: list[str] = []
+        seen: set[str] = set()
+        for item in value:
+            text = " ".join(str(item).strip().split())[:80]
+            if text and text.casefold() not in seen:
+                seen.add(text.casefold())
+                result.append(text)
+            if len(result) >= 30:
+                break
+        return result
+
+    def _resolve_novel_resource_snapshots(
+        self,
+        tenant_id: str,
+        *,
+        style: str,
+        creative_brief: dict,
+        primary_type_id: str | None,
+        style_resource_id: str | None,
+        creative_template_id: str | None,
+        quality_policy_id: str | None,
+        resource_snapshots: dict[str, dict] | None,
+    ) -> dict[str, dict]:
+        snapshots = default_resource_snapshots(
+            tenant_id, style_key=style, creative_brief=creative_brief
+        )
+        if resource_snapshots:
+            for key in snapshots:
+                candidate = resource_snapshots.get(key)
+                if isinstance(candidate, dict) and candidate.get("id"):
+                    snapshots[key] = resource_snapshot(candidate)
+
+        def published(kind: str, resource_id: str | None) -> dict | None:
+            if not resource_id:
+                return None
+            item = self.get_resource(tenant_id, kind, str(resource_id))
+            if item is None and kind == "styles":
+                item = system_style_resource(tenant_id, str(resource_id))
+            if item is None or str(item.get("status")) != "published":
+                raise ValueError("作品只能引用已发布的工作区资源")
+            return item
+
+        content = published("content_types", primary_type_id)
+        style_item = published("styles", style_resource_id)
+        template = published("creative_templates", creative_template_id)
+        quality = published("quality_policies", quality_policy_id)
+        if content:
+            snapshots["content_type_snapshot"] = resource_snapshot(content)
+        if style_item:
+            snapshots["style_snapshot"] = resource_snapshot(style_item)
+        if template:
+            snapshots["creative_template_snapshot"] = resource_snapshot(template)
+        if quality:
+            snapshots["quality_policy_snapshot"] = resource_snapshot(quality)
+        return snapshots
+
+    def _backfill_novel_resource_snapshots(self, conn: sqlite3.Connection) -> None:
+        """Populate immutable defaults for rows created before resource snapshots."""
+        rows = conn.execute(
+            "SELECT id, tenant_id, style, creative_brief_json, content_type_snapshot_json, "
+            "style_snapshot_json, creative_template_snapshot_json, quality_policy_snapshot_json "
+            "FROM novels"
+        ).fetchall()
+        for row in rows:
+            if all(row[name] not in (None, "", "{}") for name in (
+                "content_type_snapshot_json", "style_snapshot_json",
+                "creative_template_snapshot_json", "quality_policy_snapshot_json",
+            )):
+                continue
+            try:
+                brief = json.loads(row["creative_brief_json"] or "{}")
+            except (TypeError, json.JSONDecodeError):
+                brief = {}
+            snapshots = default_resource_snapshots(
+                str(row["tenant_id"] or LOCAL_TENANT_ID),
+                style_key=str(row["style"] or ""),
+                creative_brief=brief,
+            )
+            conn.execute(
+                "UPDATE novels SET content_type_snapshot_json = ?, style_snapshot_json = ?, "
+                "creative_template_snapshot_json = ?, quality_policy_snapshot_json = ? WHERE id = ?",
+                tuple(
+                    json.dumps(snapshots[key], ensure_ascii=False, sort_keys=True)
+                    for key in (
+                        "content_type_snapshot", "style_snapshot",
+                        "creative_template_snapshot", "quality_policy_snapshot",
+                    )
+                ) + (row["id"],),
+            )
+
     # ------------------------------------------------------------------
     # 小说
     # ------------------------------------------------------------------
@@ -479,6 +623,12 @@ class NovelStore:
         creative_brief: dict | None = None,
         tenant_id: str | None = None,
         created_by: str | None = None,
+        primary_type_id: str | None = None,
+        resource_tags: list[str] | None = None,
+        style_resource_id: str | None = None,
+        creative_template_id: str | None = None,
+        quality_policy_id: str | None = None,
+        resource_snapshots: dict[str, dict] | None = None,
     ) -> dict:
         now = datetime.now().isoformat()
         normalized_brief = normalize_creative_brief(creative_brief)
@@ -487,16 +637,39 @@ class NovelStore:
         principal = current_principal()
         tenant = str(tenant_id or (principal.tenant_id if principal else None) or LOCAL_TENANT_ID)
         creator = str(created_by or (principal.user_id if principal else None) or LOCAL_USER_ID)
+        snapshots = self._resolve_novel_resource_snapshots(
+            tenant,
+            style=style,
+            creative_brief=normalized_brief,
+            primary_type_id=primary_type_id,
+            style_resource_id=style_resource_id,
+            creative_template_id=creative_template_id,
+            quality_policy_id=quality_policy_id,
+            resource_snapshots=resource_snapshots,
+        )
+        clean_tags = self._normalize_resource_tags(resource_tags)
         with self._conn() as conn:
             conn.execute(
                 "INSERT INTO novels (id, tenant_id, created_by, title, genre, inspiration, style, total_chapters, "
-                "planning_review_enabled, creative_brief_json, creative_brief_version, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "planning_review_enabled, creative_brief_json, creative_brief_version, primary_type_id, "
+                "resource_tags_json, style_resource_id, creative_template_id, quality_policy_id, "
+                "content_type_snapshot_json, style_snapshot_json, creative_template_snapshot_json, "
+                "quality_policy_snapshot_json, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     novel_id, tenant, creator, title, genre, inspiration, style, total_chapters,
                     int(planning_review_enabled),
                     brief_json,
                     1,
+                    primary_type_id,
+                    json.dumps(clean_tags, ensure_ascii=False),
+                    style_resource_id,
+                    creative_template_id,
+                    quality_policy_id,
+                    json.dumps(snapshots["content_type_snapshot"], ensure_ascii=False, sort_keys=True),
+                    json.dumps(snapshots["style_snapshot"], ensure_ascii=False, sort_keys=True),
+                    json.dumps(snapshots["creative_template_snapshot"], ensure_ascii=False, sort_keys=True),
+                    json.dumps(snapshots["quality_policy_snapshot"], ensure_ascii=False, sort_keys=True),
                     now,
                     now,
                 ),
@@ -512,6 +685,12 @@ class NovelStore:
                 "planning_review_enabled": planning_review_enabled,
                 "creative_brief_version": 1,
                 "creative_brief": normalized_brief,
+                "primary_type_id": primary_type_id,
+                "resource_tags": clean_tags,
+                "style_resource_id": style_resource_id,
+                "creative_template_id": creative_template_id,
+                "quality_policy_id": quality_policy_id,
+                **snapshots,
                 "created_at": now, "updated_at": now}
 
     def get_novel(self, novel_id: str, tenant_id: str | None = None) -> dict | None:
@@ -539,6 +718,286 @@ class NovelStore:
     # ------------------------------------------------------------------
     # 用户、租户与会话
     # ------------------------------------------------------------------
+    def get_tenant(self, tenant_id: str) -> dict | None:
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT id, name, created_by, created_at FROM tenants WHERE id = ?",
+                (tenant_id,),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def update_tenant_name(self, tenant_id: str, name: str) -> dict | None:
+        clean_name = " ".join(str(name).split())[:120]
+        if not clean_name:
+            return None
+        with self._conn() as conn:
+            conn.execute("UPDATE tenants SET name = ? WHERE id = ?", (clean_name, tenant_id))
+            row = conn.execute(
+                "SELECT id, name, created_by, created_at FROM tenants WHERE id = ?",
+                (tenant_id,),
+            ).fetchone()
+        return dict(row) if row else None
+
+    # ------------------------------------------------------------------
+    # 工作区资源
+    # ------------------------------------------------------------------
+    def create_resource(
+        self,
+        *,
+        resource_id: str,
+        tenant_id: str,
+        kind: str,
+        key: str,
+        name: str,
+        description: str,
+        payload: dict,
+        created_by: str,
+        status: str = "draft",
+        is_system: bool = False,
+    ) -> dict:
+        now = datetime.now(UTC).isoformat()
+        with self._conn() as conn:
+            existing = conn.execute(
+                "SELECT id FROM workspace_resources WHERE tenant_id = ? AND kind = ? AND key = ? "
+                "ORDER BY version DESC LIMIT 1",
+                (tenant_id, kind, key),
+            ).fetchone()
+            if existing is not None:
+                raise ValueError("资源 key 已存在")
+            conn.execute(
+                "INSERT INTO workspace_resources ("
+                "id, tenant_id, kind, key, name, description, status, version, is_system, created_by, "
+                "payload_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)",
+                (
+                    resource_id,
+                    tenant_id,
+                    kind,
+                    key,
+                    name,
+                    description,
+                    status,
+                    int(is_system),
+                    created_by,
+                    json.dumps(payload, ensure_ascii=False, sort_keys=True),
+                    now,
+                    now,
+                ),
+            )
+            row = conn.execute(
+                "SELECT * FROM workspace_resources WHERE id = ? AND version = 1",
+                (resource_id,),
+            ).fetchone()
+        return self._resource_dict(row)
+
+    def list_resources(self, tenant_id: str, kind: str, status: str | None = None) -> list[dict]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT * FROM workspace_resources WHERE tenant_id = ? AND kind = ? "
+                "ORDER BY id, version DESC",
+                (tenant_id, kind),
+            ).fetchall()
+        latest: dict[str, dict] = {}
+        for row in rows:
+            item = self._resource_dict(row)
+            latest.setdefault(item["id"], item)
+        result = list(latest.values())
+        if status:
+            result = [item for item in result if item["status"] == status]
+        return sorted(result, key=lambda item: (str(item["name"]), str(item["key"])))
+
+    def get_resource(
+        self,
+        tenant_id: str,
+        kind: str,
+        resource_id: str,
+        version: int | None = None,
+    ) -> dict | None:
+        with self._conn() as conn:
+            if version is None:
+                row = conn.execute(
+                    "SELECT * FROM workspace_resources WHERE tenant_id = ? AND kind = ? AND id = ? "
+                    "ORDER BY version DESC LIMIT 1",
+                    (tenant_id, kind, resource_id),
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    "SELECT * FROM workspace_resources WHERE tenant_id = ? AND kind = ? AND id = ? AND version = ?",
+                    (tenant_id, kind, resource_id, int(version)),
+                ).fetchone()
+        return self._resource_dict(row) if row else None
+
+    def list_resource_versions(self, tenant_id: str, kind: str, resource_id: str) -> list[dict]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT * FROM workspace_resources WHERE tenant_id = ? AND kind = ? AND id = ? "
+                "ORDER BY version",
+                (tenant_id, kind, resource_id),
+            ).fetchall()
+        return [self._resource_dict(row) for row in rows]
+
+    def update_resource(
+        self,
+        *,
+        tenant_id: str,
+        kind: str,
+        resource_id: str,
+        key: str,
+        name: str,
+        description: str,
+        payload: dict,
+        expected_version: int | None = None,
+    ) -> dict | None:
+        now = datetime.now(UTC).isoformat()
+        with self._conn() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            current = conn.execute(
+                "SELECT * FROM workspace_resources WHERE tenant_id = ? AND kind = ? AND id = ? "
+                "ORDER BY version DESC LIMIT 1",
+                (tenant_id, kind, resource_id),
+            ).fetchone()
+            if current is None:
+                return None
+            current_version = int(current["version"])
+            if expected_version is not None and current_version != int(expected_version):
+                raise ValueError("资源版本已变化，请刷新后重试")
+            if str(current["status"]) == "draft":
+                version = current_version
+                conn.execute(
+                    "UPDATE workspace_resources SET key = ?, name = ?, description = ?, payload_json = ?, "
+                    "updated_at = ? WHERE id = ? AND version = ?",
+                    (
+                        key,
+                        name,
+                        description,
+                        json.dumps(payload, ensure_ascii=False, sort_keys=True),
+                        now,
+                        resource_id,
+                        version,
+                    ),
+                )
+            else:
+                version = current_version + 1
+                conn.execute(
+                    "INSERT INTO workspace_resources ("
+                    "id, tenant_id, kind, key, name, description, status, version, is_system, created_by, "
+                    "payload_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?)",
+                    (
+                        resource_id,
+                        tenant_id,
+                        kind,
+                        key,
+                        name,
+                        description,
+                        version,
+                        int(current["is_system"]),
+                        current["created_by"],
+                        json.dumps(payload, ensure_ascii=False, sort_keys=True),
+                        str(current["created_at"]),
+                        now,
+                    ),
+                )
+            row = conn.execute(
+                "SELECT * FROM workspace_resources WHERE id = ? AND version = ?",
+                (resource_id, version),
+            ).fetchone()
+        return self._resource_dict(row)
+
+    def publish_resource(
+        self,
+        tenant_id: str,
+        kind: str,
+        resource_id: str,
+        expected_version: int | None = None,
+    ) -> dict | None:
+        return self._transition_resource(
+            tenant_id,
+            kind,
+            resource_id,
+            target_status="published",
+            expected_version=expected_version,
+        )
+
+    def disable_resource(
+        self,
+        tenant_id: str,
+        kind: str,
+        resource_id: str,
+        expected_version: int | None = None,
+    ) -> dict | None:
+        return self._transition_resource(
+            tenant_id,
+            kind,
+            resource_id,
+            target_status="disabled",
+            expected_version=expected_version,
+        )
+
+    def _transition_resource(
+        self,
+        tenant_id: str,
+        kind: str,
+        resource_id: str,
+        *,
+        target_status: str,
+        expected_version: int | None,
+    ) -> dict | None:
+        now = datetime.now(UTC).isoformat()
+        with self._conn() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            current = conn.execute(
+                "SELECT * FROM workspace_resources WHERE tenant_id = ? AND kind = ? AND id = ? "
+                "ORDER BY version DESC LIMIT 1",
+                (tenant_id, kind, resource_id),
+            ).fetchone()
+            if current is None:
+                return None
+            current_version = int(current["version"])
+            if expected_version is not None and current_version != int(expected_version):
+                raise ValueError("资源版本已变化，请刷新后重试")
+            if int(current["is_system"]):
+                raise ValueError("系统资源不能直接修改")
+            if str(current["status"]) == target_status:
+                return self._resource_dict(current)
+            version = current_version + 1
+            conn.execute(
+                "INSERT INTO workspace_resources ("
+                "id, tenant_id, kind, key, name, description, status, version, is_system, created_by, "
+                "payload_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    resource_id,
+                    tenant_id,
+                    kind,
+                    str(current["key"]),
+                    str(current["name"]),
+                    str(current["description"]),
+                    target_status,
+                    version,
+                    int(current["is_system"]),
+                    str(current["created_by"]),
+                    str(current["payload_json"]),
+                    str(current["created_at"]),
+                    now,
+                ),
+            )
+            row = conn.execute(
+                "SELECT * FROM workspace_resources WHERE id = ? AND version = ?",
+                (resource_id, version),
+            ).fetchone()
+        return self._resource_dict(row)
+
+    @staticmethod
+    def _resource_dict(row: sqlite3.Row) -> dict:
+        resource = dict(row)
+        resource["workspace_id"] = resource.pop("tenant_id")
+        raw_payload = resource.pop("payload_json", "{}")
+        try:
+            payload = json.loads(raw_payload or "{}")
+        except (TypeError, json.JSONDecodeError):
+            payload = {}
+        resource["payload"] = payload if isinstance(payload, dict) else {}
+        resource["is_system"] = bool(resource.get("is_system", 0))
+        return resource
+
     def create_user_with_tenant(
         self,
         *,
@@ -614,6 +1073,16 @@ class NovelStore:
             ).fetchone()
         return self._user_dict(row) if row else None
 
+    def get_user_in_tenant(self, user_id: str, tenant_id: str) -> dict | None:
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT u.*, t.name AS tenant_name FROM users u "
+                "JOIN tenants t ON t.id = u.tenant_id "
+                "WHERE u.id = ? AND u.tenant_id = ?",
+                (user_id, tenant_id),
+            ).fetchone()
+        return self._user_dict(row) if row else None
+
     def list_users(self, tenant_id: str) -> list[dict]:
         with self._conn() as conn:
             rows = conn.execute(
@@ -623,6 +1092,37 @@ class NovelStore:
                 (tenant_id,),
             ).fetchall()
         return [self._user_dict(row) for row in rows]
+
+    def count_tenant_owners(self, tenant_id: str) -> int:
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS count FROM users WHERE tenant_id = ? AND role = 'owner'",
+                (tenant_id,),
+            ).fetchone()
+        return int(row["count"] if row else 0)
+
+    def remove_user_from_tenant(self, user_id: str, tenant_id: str) -> bool:
+        with self._conn() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            target = conn.execute(
+                "SELECT role FROM users WHERE id = ? AND tenant_id = ?",
+                (user_id, tenant_id),
+            ).fetchone()
+            if target is None:
+                return False
+            if str(target["role"]) == "owner":
+                owners = conn.execute(
+                    "SELECT COUNT(*) AS count FROM users WHERE tenant_id = ? AND role = 'owner'",
+                    (tenant_id,),
+                ).fetchone()
+                if int(owners["count"] if owners else 0) <= 1:
+                    return False
+            conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+            cursor = conn.execute(
+                "DELETE FROM users WHERE id = ? AND tenant_id = ?",
+                (user_id, tenant_id),
+            )
+        return cursor.rowcount > 0
 
     def create_session(
         self,
@@ -954,6 +1454,33 @@ class NovelStore:
         except (TypeError, json.JSONDecodeError):
             creative_brief = {}
         novel["creative_brief"] = normalize_creative_brief(creative_brief)
+        raw_tags = novel.pop("resource_tags_json", "[]") or "[]"
+        try:
+            tags = json.loads(raw_tags)
+        except (TypeError, json.JSONDecodeError):
+            tags = []
+        novel["resource_tags"] = tags if isinstance(tags, list) else []
+        for field in (
+            "content_type_snapshot",
+            "style_snapshot",
+            "creative_template_snapshot",
+            "quality_policy_snapshot",
+        ):
+            raw = novel.pop(f"{field}_json", "{}") or "{}"
+            try:
+                value = json.loads(raw)
+            except (TypeError, json.JSONDecodeError):
+                value = {}
+            novel[field] = value if isinstance(value, dict) else {}
+        if not all(novel[field] for field in (
+            "content_type_snapshot", "style_snapshot",
+            "creative_template_snapshot", "quality_policy_snapshot",
+        )):
+            novel.update(default_resource_snapshots(
+                str(novel.get("tenant_id") or LOCAL_TENANT_ID),
+                style_key=str(novel.get("style") or ""),
+                creative_brief=novel["creative_brief"],
+            ))
         return novel
 
     def delete_novel(self, novel_id: str) -> bool:
@@ -2416,4 +2943,3 @@ class NovelStore:
         d = dict(row)
         d["state"] = json.loads(d.pop("state_json") or "{}")
         return d
-

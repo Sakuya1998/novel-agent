@@ -22,7 +22,12 @@ def export_openapi(destination: str | Path = "openapi/novel-agent-v1.json") -> P
             versioned_paths[alias] = copied
     schema["paths"].update(versioned_paths)
     schema["info"] = {**schema.get("info", {}), "version": "1.0.0-v1"}
-    path.write_text(json.dumps(schema, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    # Keep the committed artifact byte-stable across Windows and POSIX CI.
+    path.write_text(
+        json.dumps(schema, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
     return path
 
 

@@ -128,6 +128,10 @@ async def run_novel_pipeline(
                 style=str(args.style),
                 creative_brief=novel.get("creative_brief"),
                 creative_brief_version=int(novel.get("creative_brief_version", 1) or 1),
+                content_type_snapshot=novel.get("content_type_snapshot"),
+                style_snapshot=novel.get("style_snapshot"),
+                creative_template_snapshot=novel.get("creative_template_snapshot"),
+                quality_policy_snapshot=novel.get("quality_policy_snapshot"),
                 config=cfg,
             )
 
@@ -233,4 +237,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

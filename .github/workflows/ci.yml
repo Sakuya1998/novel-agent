@@ -29,23 +29,6 @@ jobs:
           git diff --exit-code -- openapi/novel-agent-v1.json
       - name: Evaluation regression gate
         run: uv run --locked python -m scripts.run_evaluations
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "24"
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-      - name: Frontend install
-        working-directory: frontend
-        run: npm ci
-      - name: Frontend test
-        working-directory: frontend
-        run: npm test
-      - name: Frontend typecheck
-        working-directory: frontend
-        run: npm run typecheck
-      - name: Frontend build
-        working-directory: frontend
-        run: npm run build
 
   docker:
     runs-on: ubuntu-latest
@@ -67,58 +50,6 @@ jobs:
         run: python -m scripts.check_deployment
       - name: Build image
         run: docker build -t novel-agent:ci .
-      - name: Build frontend image
-        run: docker build -t novel-agent-frontend:ci frontend
-      - name: Compose smoke test
-        run: |
-          set -euo pipefail
-          trap 'docker compose logs --no-color; docker compose down --volumes' EXIT
-          docker compose up -d --build
-          for attempt in $(seq 1 30); do
-            if curl --fail --silent http://127.0.0.1:5173/readyz >/dev/null; then
-              curl --fail --silent http://127.0.0.1:5173/healthz
-              exit 0
-            fi
-            sleep 2
-          done
-          exit 1
-
-  browser-e2e:
-    runs-on: ubuntu-latest
-    needs: lint-test
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.14"
-      - uses: astral-sh/setup-uv@v6
-        with:
-          version: "0.12.1"
-          enable-cache: true
-      - name: Install locked Python dependencies
-        run: uv sync --locked --all-extras
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "24"
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-      - name: Install frontend dependencies
-        working-directory: frontend
-        run: npm ci
-      - name: Install Chromium
-        working-directory: frontend
-        run: npm run test:e2e:install
-      - name: Run browser smoke flow
-        working-directory: frontend
-        run: npm run test:e2e
-      - name: Upload Playwright report on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: playwright-report
-          path: frontend/playwright-report
-          if-no-files-found: ignore
-          retention-days: 7
 
   audit:
     runs-on: ubuntu-latest
@@ -147,14 +78,3 @@ jobs:
           --ignore-vuln CVE-2026-45830
           --ignore-vuln CVE-2026-45831
           --ignore-vuln CVE-2026-45833
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "24"
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-      - name: Frontend install
-        working-directory: frontend
-        run: npm ci
-      - name: Frontend dependency audit
-        working-directory: frontend
-        run: npm audit --registry=https://registry.npmjs.org --audit-level=high

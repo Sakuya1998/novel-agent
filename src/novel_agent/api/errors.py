@@ -30,4 +30,10 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException) 
 async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
     if getattr(request.state, "api_version", "legacy") != "v1":
         return JSONResponse({"detail": exc.errors()}, status_code=422)
-    return error_response(request, code="validation_error", message="请求参数无效", status_code=422, details=exc.errors())
+    return error_response(
+        request,
+        code="validation_error",
+        message="请求参数无效",
+        status_code=422,
+        details=exc.errors(),
+    )

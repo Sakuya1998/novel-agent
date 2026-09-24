@@ -5,6 +5,7 @@ import difflib
 import io
 import json
 import logging
+import re
 import sqlite3
 import time
 import zipfile
@@ -20,10 +21,10 @@ from fastapi import FastAPI, File, Form, Header, HTTPException, Query, Request, 
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
-from starlette.exceptions import HTTPException as StarletteHTTPException
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.types import Command
 from pydantic import BaseModel, ConfigDict, Field
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from novel_agent.agents.chapter_candidate import (
     ChapterCandidateAgent,
@@ -34,10 +35,14 @@ from novel_agent.agents.character_designer import validate_characters
 from novel_agent.agents.plot_planner import validate_outline
 from novel_agent.agents.quality_evaluator import QualityEvaluatorAgent
 from novel_agent.agents.scene_planner import normalize_scene_plan
+from novel_agent.api.errors import http_exception_handler, validation_exception_handler
+from novel_agent.api.jobs import job_event_envelope
 from novel_agent.api.model_settings import router as model_settings_router
-from novel_agent.api.errors import error_response, http_exception_handler, validation_exception_handler
 from novel_agent.api.pagination import paginate
+from novel_agent.api.resources import canonical_router as canonical_resources_router
+from novel_agent.api.resources import router as resources_router
 from novel_agent.api.v1 import router as api_v1_router
+from novel_agent.api.workspaces import router as workspaces_router
 from novel_agent.config import Config, validate_production_config
 from novel_agent.graph.builder import build_graph
 from novel_agent.graph.state import create_initial_state
@@ -130,6 +135,7 @@ async def lifespan(fastapi_app: FastAPI):
         if recovered_jobs:
             logger.warning("服务启动时恢复 %s 个租约已过期的任务", recovered_jobs)
         fastapi_app.state.config = cfg
+        fastapi_app.state.novel_store = store
         fastapi_app.state.worker_id = worker_id
         fastapi_app.state.checkpointer = checkpointer
         fastapi_app.state.graph = build_graph(checkpointer=checkpointer)
@@ -190,9 +196,15 @@ app.add_middleware(
     allow_origins=[origin.strip() for origin in cfg.frontend_origins.split(",") if origin.strip()],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization", "X-Backup-Password", "X-CSRF-Token"],
+    allow_headers=[
+        "Content-Type", "Authorization", "Idempotency-Key", "If-Match",
+        "X-Backup-Password", "X-CSRF-Token",
+    ],
 )
 app.include_router(model_settings_router)
+app.include_router(workspaces_router)
+app.include_router(canonical_resources_router)
+app.include_router(resources_router)
 app.include_router(api_v1_router)
 
 
@@ -228,9 +240,21 @@ def _job_fingerprint(action: str, payload: object) -> str:
     return json.dumps({"action": action, "payload": payload}, ensure_ascii=False, sort_keys=True, default=str)
 
 
+def _run_job_allowed(job: dict | None, request: Request) -> bool:
+    if job is None:
+        return False
+    novel = store.get_novel(str(job.get("novel_id", "")))
+    if novel is None:
+        return False
+    principal = getattr(request.state, "principal", None)
+    return not cfg.auth_enabled or principal is not None and novel.get("tenant_id") == principal.tenant_id
+
+
 @app.middleware("http")
 async def versioned_api_headers(request: Request, call_next):
-    request.state.api_version = "v1" if request.url.path == "/api/v1" or request.url.path.startswith("/api/v1/") else "legacy"
+    request.state.api_version = (
+        "v1" if request.url.path == "/api/v1" or request.url.path.startswith("/api/v1/") else "legacy"
+    )
     request.state.request_id = request.headers.get("X-Request-ID", "") or f"req_{uuid4().hex}"
     if request.state.api_version == "v1" and request.url.path.startswith("/api/v1/"):
         request.scope["path"] = "/api" + request.url.path[len("/api/v1"):]
@@ -239,6 +263,9 @@ async def versioned_api_headers(request: Request, call_next):
     response.headers["X-Request-ID"] = request.state.request_id
     if request.state.api_version == "v1":
         response.headers["X-API-Version"] = "v1"
+    elif request.url.path.startswith("/api/"):
+        response.headers["Deprecation"] = "true"
+        response.headers["Link"] = f'<{request.url.path.replace("/api/", "/api/v1/", 1)}>; rel="successor-version"'
     return response
 
 
@@ -422,6 +449,24 @@ async def authenticate_request(request: Request, call_next):
             response = JSONResponse({"detail": "当前角色只有只读权限"}, status_code=403)
             _observe_request(metrics, started, response.status_code)
             return response
+        if cfg.auth_enabled and principal is not None and request.method == "POST":
+            job_match = re.fullmatch(r"/api/jobs/([^/]+)/cancel", path)
+            novel_job_match = re.fullmatch(
+                r"/api/novels/([^/]+)/jobs/(?:run|resume|candidates|canon|book-revision)",
+                path,
+            )
+            if job_match or novel_job_match:
+                if novel_job_match:
+                    target_novel = store.get_novel(novel_job_match.group(1))
+                else:
+                    target_job = store.get_run_job(job_match.group(1))
+                    target_novel = (
+                        store.get_novel(str(target_job.get("novel_id", ""))) if target_job else None
+                    )
+                if target_novel is None or target_novel.get("tenant_id") != principal.tenant_id:
+                    response = JSONResponse({"detail": "运行任务不存在"}, status_code=404)
+                    _observe_request(metrics, started, response.status_code)
+                    return response
         sensitive_scope = _sensitive_scope(path, request.method)
         if sensitive_scope and principal is not None:
             retry_after = _consume_rate_limit(
@@ -515,6 +560,8 @@ class CreativeBriefUpdateRequest(BaseModel):
 
 
 class CreateNovelRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     title: str = Field(min_length=1, max_length=100)
     genre: str = Field(default="武侠", max_length=20)
     inspiration: str = Field(min_length=1, max_length=2000)
@@ -522,6 +569,11 @@ class CreateNovelRequest(BaseModel):
     style: str = Field(default="jin_yong", max_length=30)
     planning_review_enabled: bool = False
     creative_brief: CreativeBriefRequest = Field(default_factory=CreativeBriefRequest)
+    primary_type_id: str | None = Field(default=None, max_length=120)
+    resource_tags: list[str] = Field(default_factory=list, max_length=30)
+    style_resource_id: str | None = Field(default=None, max_length=120)
+    creative_template_id: str | None = Field(default=None, max_length=120)
+    quality_policy_id: str | None = Field(default=None, max_length=120)
 
 
 class ResumeRequest(BaseModel):
@@ -887,16 +939,24 @@ async def create_novel(
     if replay is not None:
         return replay
     novel_id = f"novel_{uuid4().hex[:8]}"
-    result = store.create_novel(
-        novel_id,
-        req.title,
-        req.genre,
-        req.style,
-        req.total_chapters,
-        req.inspiration,
-        req.planning_review_enabled,
-        normalize_creative_brief(req.creative_brief.model_dump()),
-    )
+    try:
+        result = store.create_novel(
+            novel_id,
+            req.title,
+            req.genre,
+            req.style,
+            req.total_chapters,
+            req.inspiration,
+            req.planning_review_enabled,
+            normalize_creative_brief(req.creative_brief.model_dump()),
+            primary_type_id=req.primary_type_id,
+            resource_tags=req.resource_tags,
+            style_resource_id=req.style_resource_id,
+            creative_template_id=req.creative_template_id,
+            quality_policy_id=req.quality_policy_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
     _idempotency_store(request, idempotency_key, fingerprint, result)
     return result
 
@@ -959,6 +1019,11 @@ async def _persist_imported_payload(
         inspiration=str(source_novel.get("inspiration", "导入作品"))[:2000],
         planning_review_enabled=bool(source_novel.get("planning_review_enabled", False)),
         creative_brief=source_novel.get("creative_brief"),
+        primary_type_id=source_novel.get("primary_type_id"),
+        resource_tags=source_novel.get("resource_tags") or [],
+        style_resource_id=source_novel.get("style_resource_id"),
+        creative_template_id=source_novel.get("creative_template_id"),
+        quality_policy_id=source_novel.get("quality_policy_id"),
     )
     try:
         for chapter in chapters:
@@ -2341,7 +2406,15 @@ async def _ensure_checkpoint_creative_brief(novel_id: str, novel: dict):
     stored_version = max(int(novel.get("creative_brief_version", 1) or 1), 1)
     state_brief = normalize_creative_brief(values.get("creative_brief"))
     state_version = max(int(values.get("creative_brief_version", 1) or 1), 1)
-    stale = state_brief != stored_brief or state_version != stored_version
+    snapshots = {
+        key: novel.get(key) or {}
+        for key in (
+            "content_type_snapshot", "style_snapshot",
+            "creative_template_snapshot", "quality_policy_snapshot",
+        )
+    }
+    snapshots_stale = any(values.get(key) != snapshot for key, snapshot in snapshots.items())
+    stale = state_brief != stored_brief or state_version != stored_version or snapshots_stale
     if not stale:
         return snapshot
     review_required = bool(values.get("creative_brief_review_required", False))
@@ -2356,6 +2429,7 @@ async def _ensure_checkpoint_creative_brief(novel_id: str, novel: dict):
             "candidate_source_hash": "",
             "issues": [] if review_required else values.get("issues") or [],
             "quality_report": {} if review_required else values.get("quality_report") or {},
+            **snapshots,
         },
     )
     return await graph.aget_state(graph_config)
@@ -2883,6 +2957,10 @@ async def _prepare_run_job(novel_id: str) -> object:
         planning_review_enabled=bool(novel.get("planning_review_enabled", False)),
         creative_brief=novel.get("creative_brief"),
         creative_brief_version=int(novel.get("creative_brief_version", 1) or 1),
+        content_type_snapshot=novel.get("content_type_snapshot"),
+        style_snapshot=novel.get("style_snapshot"),
+        creative_template_snapshot=novel.get("creative_template_snapshot"),
+        quality_policy_snapshot=novel.get("quality_policy_snapshot"),
         config=cfg,
     )
 
@@ -3090,8 +3168,15 @@ async def create_resume_job(
 async def create_candidate_generation_job(
     novel_id: str,
     req: CandidateGenerationRequest,
+    request: Request,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key", max_length=200),
 ) -> dict:
     """Generate chapter alternatives while leaving the review checkpoint untouched."""
+    request_payload = req.model_dump()
+    fingerprint = _job_fingerprint("candidate_generation", request_payload)
+    replay = _idempotency_lookup(request, idempotency_key, fingerprint)
+    if replay is not None:
+        return replay
     novel = store.get_novel(novel_id)
     if not novel:
         raise HTTPException(404, "小说不存在")
@@ -3109,7 +3194,7 @@ async def create_candidate_generation_job(
         raise HTTPException(409, "当前没有可用于生成候选稿的待审正文")
 
     _validate_model_runtime()
-    request = {
+    job_request = {
         **req.model_dump(),
         "chapter_number": chapter_number,
     }
@@ -3118,7 +3203,7 @@ async def create_candidate_generation_job(
             f"job_{uuid4().hex[:12]}",
             novel_id,
             "candidate_generation",
-            request,
+            job_request,
             lease_owner=_run_job_worker_id(),
             lease_seconds=_run_job_lease_seconds(),
         )
@@ -3131,6 +3216,7 @@ async def create_candidate_generation_job(
         instruction=req.instruction.strip(),
         source_hash=chapter_candidate_source_hash(values),
     )
+    _idempotency_store(request, idempotency_key, fingerprint, job)
     return job
 
 
@@ -3159,8 +3245,18 @@ async def create_canon_job(
 
 
 @app.post("/api/novels/{novel_id}/jobs/book-revision", status_code=202)
-async def create_book_revision_job(novel_id: str, req: BookRevisionRequest) -> dict:
+async def create_book_revision_job(
+    novel_id: str,
+    req: BookRevisionRequest,
+    request: Request,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key", max_length=200),
+) -> dict:
     """从已完成检查点重开指定终稿章，批准后重新运行全书终审。"""
+    request_payload = req.model_dump()
+    fingerprint = _job_fingerprint("book_revision", request_payload)
+    replay = _idempotency_lookup(request, idempotency_key, fingerprint)
+    if replay is not None:
+        return replay
     _validate_model_runtime()
     lock = get_novel_lock(novel_id)
     await lock.acquire()
@@ -3250,13 +3346,14 @@ async def create_book_revision_job(novel_id: str, req: BookRevisionRequest) -> d
         lock.release()
 
     _schedule_run_job(job, None)
+    _idempotency_store(request, idempotency_key, fingerprint, job)
     return job
 
 
 @app.get("/api/jobs/{job_id}")
-async def get_run_job(job_id: str) -> dict:
+async def get_run_job(job_id: str, request: Request) -> dict:
     job = store.get_run_job(job_id)
-    if job is None or store.get_novel(str(job.get("novel_id", ""))) is None:
+    if not _run_job_allowed(job, request):
         raise HTTPException(404, "运行任务不存在")
     return job
 
@@ -3264,22 +3361,38 @@ async def get_run_job(job_id: str) -> dict:
 @app.get("/api/jobs/{job_id}/events")
 async def get_run_job_events(
     job_id: str,
-    after_sequence: int = 0,
-    limit: int = 200,
+    request: Request,
+    after_sequence: int = Query(default=0, ge=0),
+    limit: int = Query(default=200, ge=1, le=1000),
 ) -> dict:
     job = store.get_run_job(job_id)
-    if job is None or store.get_novel(str(job.get("novel_id", ""))) is None:
+    if not _run_job_allowed(job, request):
         raise HTTPException(404, "运行任务不存在")
-    return {
+    events = store.list_run_job_events(job_id, after_sequence, limit)
+    result = {
         "job": job,
-        "events": store.list_run_job_events(job_id, after_sequence, limit),
+        "events": events,
     }
+    if _is_v1(request):
+        result["events"] = [job_event_envelope(event, job_id) for event in events]
+        result["next_after_sequence"] = (
+            int(events[-1]["sequence"]) if events else max(after_sequence, 0)
+        )
+    return result
 
 
 @app.post("/api/jobs/{job_id}/cancel")
-async def cancel_run_job(job_id: str) -> dict:
+async def cancel_run_job(
+    job_id: str,
+    request: Request,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key", max_length=200),
+) -> dict:
+    fingerprint = _job_fingerprint("cancel", {"job_id": job_id})
+    replay = _idempotency_lookup(request, idempotency_key, fingerprint)
+    if replay is not None:
+        return replay
     job = store.get_run_job(job_id)
-    if job is None or store.get_novel(str(job.get("novel_id", ""))) is None:
+    if not _run_job_allowed(job, request):
         raise HTTPException(404, "运行任务不存在")
     if job.get("status") not in {"queued", "running"}:
         raise HTTPException(409, "运行任务已结束，无法取消")
@@ -3303,7 +3416,9 @@ async def cancel_run_job(job_id: str) -> dict:
             error="任务已取消",
             lease_owner=worker_id,
         )
-    return store.get_run_job(job_id)
+    result = store.get_run_job(job_id)
+    _idempotency_store(request, idempotency_key, fingerprint, result or {})
+    return result
 
 
 async def _stream_graph(
@@ -3384,6 +3499,10 @@ async def run_novel(novel_id: str) -> StreamingResponse:
                 planning_review_enabled=bool(novel.get("planning_review_enabled", False)),
                 creative_brief=novel.get("creative_brief"),
                 creative_brief_version=int(novel.get("creative_brief_version", 1) or 1),
+                content_type_snapshot=novel.get("content_type_snapshot"),
+                style_snapshot=novel.get("style_snapshot"),
+                creative_template_snapshot=novel.get("creative_template_snapshot"),
+                quality_policy_snapshot=novel.get("quality_policy_snapshot"),
                 config=cfg,
             )
 

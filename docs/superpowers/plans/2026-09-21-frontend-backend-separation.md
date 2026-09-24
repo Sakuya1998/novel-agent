@@ -35,11 +35,11 @@
 - Produces the terminology and decisions consumed by all later tasks.
 - Defines `workspace`, `membership`, `novel`, `resource`, `resource_version`, `job`, and `audit_event`.
 
-- [ ] 明确工作区、用户、成员关系和作品归属；第一阶段保留现有 `tenant_id` 存储语义。
-- [ ] 明确认证拓扑：优先使用同一主域下的 `app.example.com` + `api.example.com`，或由反向代理继续提供单一 origin `/api`。
-- [ ] 明确前端独立仓库名称、默认分支、发布版本策略和兼容窗口。
-- [ ] 明确资源生命周期：`draft`、`published`、`disabled`、软删除、版本号和发布者。
-- [ ] 为每个决策写出被拒绝的替代方案和原因。
+- [x] 明确工作区、用户、成员关系和作品归属；第一阶段保留现有 `tenant_id` 存储语义。
+- [x] 明确认证拓扑：优先使用同一主域下的 `app.example.com` + `api.example.com`，或由反向代理继续提供单一 origin `/api`。
+- [x] 明确前端独立仓库名称、默认分支、发布版本策略和兼容窗口。
+- [x] 明确资源生命周期：`draft`、`published`、`disabled`、软删除、版本号和发布者。
+- [x] 为每个决策写出被拒绝的替代方案和原因。
 
 验收：产品边界、术语、认证方案、版本策略和回滚策略在设计文档中无未决冲突。
 
@@ -58,12 +58,12 @@
 - Produces `/api/v1/*` routes, stable error envelope, pagination, request ID and OpenAPI artifact.
 - Existing `/api/*` routes remain aliases until the final decommission task.
 
-- [ ] 为公开 API 增加 `/api/v1` 前缀，保留旧路由转发到同一 service 函数。
-- [ ] 统一成功/错误响应；错误至少包含 `code`、`message`、`request_id` 和可选 `details`。
-- [ ] 为列表接口定义 `limit`、`cursor`、`has_more`，禁止前端依赖未定义的全量返回。
-- [ ] 对会被重复提交的创建和启动任务支持 `Idempotency-Key`。
-- [ ] 对资源和作品编辑支持 `ETag`/`If-Match` 或等价的版本冲突检查。
-- [ ] 在 CI 中生成并校验 OpenAPI 文件，接口变更必须经过兼容性检查。
+- [x] 为公开 API 增加 `/api/v1` 前缀，保留旧路由转发到同一 service 函数。
+- [x] 统一成功/错误响应；错误至少包含 `code`、`message`、`request_id` 和可选 `details`。
+- [x] 为列表接口定义 `limit`、`cursor`、`has_more`，禁止前端依赖未定义的全量返回。
+- [x] 对会被重复提交的创建和启动任务支持 `Idempotency-Key`。
+- [x] 对资源和作品编辑支持 `ETag`/`If-Match` 或等价的版本冲突检查。
+- [x] 在 CI 中生成并校验 OpenAPI 文件，接口变更必须经过兼容性检查。
 
 验证命令：`uv run --locked pytest tests/test_api_contract.py -q`、OpenAPI diff 检查。
 
@@ -73,20 +73,19 @@
 - Modify: `src/novel_agent/security.py`
 - Modify: `src/novel_agent/memory/sql_store.py`
 - Modify: `src/novel_agent/api/server.py`
-- Create: `src/novel_agent/api/workspaces.py`
-- Create: `src/novel_agent/api/members.py`
-- Create: `tests/test_workspace_permissions.py`
-- Create: `tests/test_tenant_isolation.py`
+- Create: `src/novel_agent/api/workspaces.py`（包含工作区与成员路由）
+- Create: `src/novel_agent/api/dependencies.py`
+- Create: `tests/test_workspace_permissions.py`（包含跨租户隔离覆盖）
 
 **Interfaces:**
 - Produces `/api/v1/workspaces`、成员邀请/角色更新/移除接口及统一权限函数。
 - Permission matrix: `owner` 管理工作区和资源，`editor` 编辑作品并使用资源，`viewer` 只读。
 
-- [ ] 将当前 principal 解析、工作区上下文和角色校验收敛到可复用依赖。
-- [ ] 为每个工作区资源和作品查询强制带租户条件，拒绝跨工作区 ID 访问。
-- [ ] 角色变更、邀请、移除和越权失败写入审计日志。
-- [ ] 明确 owner 最后一个成员保护、viewer 禁止写操作、editor 禁止管理成员和模型密钥。
-- [ ] 对每个角色建立 API 级正向/反向测试矩阵。
+- [x] 将当前 principal 解析、工作区上下文和角色校验收敛到可复用依赖。
+- [x] 为每个工作区资源和作品查询强制带租户条件，拒绝跨工作区 ID 访问。
+- [x] 角色变更、邀请、移除和越权失败写入审计日志。
+- [x] 明确 owner 最后一个成员保护、viewer 禁止写操作、editor 禁止管理成员和模型密钥。
+- [x] 对每个角色建立 API 级正向/反向测试矩阵。
 
 验证命令：`uv run --locked pytest tests/test_workspace_permissions.py tests/test_tenant_isolation.py -q`。
 
@@ -106,12 +105,12 @@
   - `/api/v1/workspaces/{workspace_id}/quality-policies`
 - Each resource exposes `id`, `workspace_id`, `key`, `name`, `description`, `status`, `version`, `is_system`, `created_by`, timestamps and payload.
 
-- [ ] 内容类型支持父子层级、别名和标签；作品保存 `primary_type_id` 与附加标签。
-- [ ] 风格库支持系统内置、工作区复制、编辑、发布和停用；不直接暴露不可控的任意 Prompt 注入能力。
-- [ ] 创作模板保存 CreativeBrief 的完整结构，而不是把每个枚举单独做成管理表。
-- [ ] 质量策略保存门槛和回归阈值；质量维度、评分协议和状态仍由系统控制。
-- [ ] 资源发布必须产生不可变版本；新版本发布不修改历史版本。
-- [ ] owner 可管理，editor 只能读取和使用，viewer 只能读取。
+- [x] 内容类型支持父子层级、别名和标签；作品保存 `primary_type_id` 与附加标签。
+- [x] 风格库支持系统内置、工作区复制、编辑、发布和停用；不直接暴露不可控的任意 Prompt 注入能力。
+- [x] 创作模板保存 CreativeBrief 的完整结构，而不是把每个枚举单独做成管理表。
+- [x] 质量策略保存门槛和回归阈值；质量维度、评分协议和状态仍由系统控制。
+- [x] 资源发布必须产生不可变版本；新版本发布不修改历史版本。
+- [x] owner 可管理，editor 只能读取和使用，viewer 只能读取。
 
 验证命令：`uv run --locked pytest tests/test_workspace_resources.py -q`。
 
@@ -129,11 +128,11 @@
 - `Novel` retains legacy `genre` and `style` for compatibility while adding resource IDs and snapshot metadata.
 - Generation state carries `content_type_snapshot`, `style_snapshot`, `creative_template_snapshot`, and `quality_policy_snapshot`.
 
-- [ ] 新建作品时引用已发布资源；未传资源时使用系统默认资源并写入快照。
-- [ ] 生成任务启动时复制资源版本快照，任务中途不重新读取可变的工作区资源。
-- [ ] 旧作品通过 `genre/style/creative_brief` 回填兼容快照，不破坏已有 checkpoint。
-- [ ] 资源停用不影响历史作品，只影响新建作品的选择。
-- [ ] 增加数据迁移 dry-run、备份前置检查和失败回滚说明。
+- [x] 新建作品时引用已发布资源；未传资源时使用系统默认资源并写入快照。
+- [x] 生成任务启动时复制资源版本快照，任务中途不重新读取可变的工作区资源。
+- [x] 旧作品通过 `genre/style/creative_brief` 回填兼容快照，不破坏已有 checkpoint。
+- [x] 资源停用不影响历史作品，只影响新建作品的选择。
+- [x] 增加数据迁移 dry-run、备份前置检查和失败回滚说明。
 
 验证命令：`uv run --locked pytest tests/test_resource_snapshots.py tests/test_checkpoint_persistence.py -q`。
 
@@ -150,10 +149,10 @@
 - Job lifecycle: `queued`、`running`、`completed`、`failed`、`cancelled`、`interrupted`。
 - Event envelope: `job_id`, `sequence`, `type`, `payload`, `created_at`。
 
-- [ ] 统一 SSE/轮询事件格式和序号，客户端可以从 `after_sequence` 续传。
-- [ ] 任务启动、取消、恢复支持幂等和权限校验。
-- [ ] 网络断开、页面刷新和重新登录后，前端可以恢复任务状态而不是重复启动。
-- [ ] 错误事件不泄露模型密钥、Prompt 中的敏感内容或跨租户信息。
+- [x] 统一轮询事件格式和序号，客户端可以从 `after_sequence` 续传；原 SSE 兼容流暂保留。
+- [x] 任务启动、取消、恢复支持幂等和权限校验。
+- [x] 通过持久化任务查询和事件游标，网络断开、页面刷新和重新登录后可恢复状态。
+- [x] 错误事件复用 provider 错误脱敏，job 查询按作品工作区隔离。
 
 验证命令：`uv run --locked pytest tests/test_jobs_contract.py tests/test_api.py -q`。
 
@@ -174,11 +173,11 @@
 - Consumes the published OpenAPI artifact from Task 2.
 - Produces typed API hooks and an application shell independent of backend source files.
 
-- [ ] 从现有 `frontend/` 保留 Git 历史迁移到新仓库，不再通过相对路径依赖 Python 仓库文件。
-- [ ] 用 `VITE_API_BASE`、运行时配置或反向代理配置 API 地址，禁止硬编码生产地址。
-- [ ] 用生成客户端替代手写请求类型；保留统一超时、CSRF、错误处理和 request ID。
-- [ ] 认证状态、工作区上下文、角色权限、加载/错误/空状态由独立基础层提供。
-- [ ] 前端 CI 只验证自身依赖、类型、单测、构建和 E2E；后端契约通过 OpenAPI artifact 检查。
+- [x] 将现有前端迁移到用户提供的独立 `novel-agent-frontend` 仓库；按要求不保留旧 Git 历史，后端仓库不再跟踪前端源码。
+- [x] 用 `VITE_API_BASE`、运行时配置或反向代理配置 API 地址，禁止硬编码生产地址。
+- [x] OpenAPI artifact 已迁移并由 `openapi-typescript` 生成完整版本化类型；215 个 operation 已接入统一 typed client，包含超时、CSRF、幂等键和 request ID 错误上下文。
+- [x] 认证状态、工作区上下文和 owner/editor/viewer 权限矩阵由独立基础层提供；页面级加载/错误/空状态继续由现有工作台逐步迁移。
+- [x] 独立前端仓库具备自身 CI（依赖、契约、类型、单测、构建和依赖审计）；后端仓库 CI/Compose 已收敛为 API 职责。
 
 ### Task 8: 前端正式应用壳层和路由拆分
 

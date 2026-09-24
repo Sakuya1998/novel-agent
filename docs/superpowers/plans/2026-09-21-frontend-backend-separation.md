@@ -255,12 +255,12 @@
 - Create: `.env.example`
 - Create: `.github/workflows/release.yml`
 
-- [ ] 前后端分别构建、打标签和发布镜像，禁止前端镜像依赖后端仓库源码。
-- [ ] 生产域名建议为 `app.<domain>` 和 `api.<domain>`；若保留单域名，统一由 Nginx 代理 `/api`。
-- [ ] 配置严格 CORS allowlist、Secure/HttpOnly/SameSite Cookie、CSRF 校验和可信代理头。
-- [ ] API、前端静态资源、数据库/向量存储、模型密钥和备份分别管理。
-- [ ] 部署脚本包含迁移前备份、健康检查、就绪检查、日志、滚动替换和回滚。
-- [ ] CI 分为前端、后端、契约、镜像安全扫描和部署 smoke test。
+- [x] 前后端分别构建、打标签和发布镜像，禁止前端镜像依赖后端仓库源码；两仓库均提供 tag release workflow 和 Trivy 高危扫描。
+- [x] 生产域名建议为 `app.<domain>` 和 `api.<domain>`；同源部署由前端 Nginx 统一代理 `/api`、`/healthz`、`/readyz`。
+- [x] 生产环境样例配置严格 CORS allowlist、Secure Cookie、CSRF 校验和可信代理头边界。
+- [x] API、前端静态资源、数据库/向量存储、模型密钥和备份分别管理。
+- [x] 部署说明包含迁移前备份、健康检查、就绪检查、日志、滚动替换和回滚步骤。
+- [x] CI 分为前端、后端、契约、镜像安全扫描和部署 smoke check。
 
 ### Task 12: 迁移演练、灰度和切换
 

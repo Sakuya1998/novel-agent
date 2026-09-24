@@ -235,9 +235,9 @@
 - Create: `src/features/jobs/useJobRecovery.ts`
 - Create: `src/features/novels/novelQueries.ts`
 
-- [ ] 保留已有写作、规划、设定、质量、评测、版本、导入导出和模型路由能力。
+- [x] 保留已有写作、规划、设定、质量、评测、版本、导入导出和模型路由能力；旧工作台组件继续由应用壳层装配。
 - [ ] 把当前弹窗功能迁移为页面级导航，保留必要的短流程确认弹窗。
-- [ ] 任务流统一使用 job API，支持刷新恢复、取消、失败重试和权限变化。
+- [x] 任务流统一使用 job API，支持刷新恢复、取消、失败重试和权限变化；新增 `useJobRecovery` 并保留 `useRunJob` 的断线重连。
 - [ ] 所有作品查询和变更都绑定当前 workspace context。
 
 ### Task 11: 独立部署、CI/CD 和环境配置

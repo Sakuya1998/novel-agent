@@ -23,6 +23,8 @@ jobs:
         run: uv run --locked ruff check src tests scripts main.py
       - name: Test
         run: uv run --locked pytest
+      - name: Security contract tests
+        run: uv run --locked pytest tests/test_security_contract.py
       - name: OpenAPI contract artifact
         run: |
           uv run --locked python scripts/export_openapi.py
@@ -78,3 +80,17 @@ jobs:
           --ignore-vuln CVE-2026-45830
           --ignore-vuln CVE-2026-45831
           --ignore-vuln CVE-2026-45833
+
+  release-gate:
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    needs: [lint-test, docker, audit]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify release checklist and observability contracts
+        run: |
+          test -s docs/operations/release-checklist.md
+          test -s deploy/prometheus.yml
+          test -s deploy/novel-agent-alerts.yml
+          grep -q 'request_id/job_id' docs/operations/release-checklist.md
+          grep -q 'novel_agent_requests_5xx' deploy/novel-agent-alerts.yml

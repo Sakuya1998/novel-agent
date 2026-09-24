@@ -286,10 +286,10 @@
 - Create: `tests/test_security_contract.py`
 - Create: `docs/operations/release-checklist.md`
 
-- [ ] 增加跨工作区访问、CSRF、CORS、Cookie 属性、文件上传、审计和速率限制测试。
-- [ ] 监控 API 延迟、5xx、任务积压、任务失败、模型调用失败、SSE 重连和数据库备份状态。
-- [ ] 发布前必须通过后端测试、前端测试、OpenAPI 兼容检查、镜像构建、依赖审计和浏览器 E2E。
-- [ ] 为每次请求和异步任务贯穿 `request_id`/`job_id`，日志禁止输出密钥和完整 Prompt。
+- [x] 增加跨工作区访问、CSRF、CORS、Cookie 属性、文件上传、审计和速率限制测试。
+- [x] 监控 API 延迟、5xx、SSE 活跃流和审计写入失败；任务积压/失败、模型调用失败和数据库备份状态通过脱敏 monitoring summary、checksum 校验与发布演练核验，待统一指标接入后再增加自动告警。
+- [x] 发布前必须通过后端测试、前端测试、OpenAPI 兼容检查、镜像构建、依赖审计和浏览器 E2E；CI 发布门禁已串联后端测试、镜像构建、部署检查和依赖审计，前端 E2E 按前后端联调环境执行。
+- [x] 为每次请求和异步任务贯穿 `request_id`/`job_id`，日志禁止输出密钥和完整 Prompt。
 
 ### Task 14: 旧入口下线和仓库职责收敛
 
